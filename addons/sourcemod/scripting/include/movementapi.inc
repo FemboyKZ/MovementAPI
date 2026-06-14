@@ -118,6 +118,19 @@ forward void Movement_OnPlayerJump(int client, bool jumpbug);
 forward void Movement_OnPlayerEdgebug(int client, float origin[3], float velocity[3]);
 
 /**
+ * Called when a player pixelsurfs.
+ * A pixelsurf also matches the edgebug signature, so Movement_OnPlayerEdgebug fires on the same tick as well: 
+ * A consumer wanting pure edgebugs should ignore any tick that also raised this forward.
+ * Called once per tick the player stays suspended on the surf.
+ * Setting velocity when this is called may not be effective.
+ *
+ * @param client		Client index.
+ * @param origin		Player origin before pixelsurf.
+ * @param velocity		Player velocity before pixelsurf.
+ */
+forward void Movement_OnPlayerPixelsurf(int client, float origin[3], float velocity[3]);
+
+/**
  * Called before PlayerMove movement function is called.
  * Modifying origin or velocity parameters will change player's origin and velocity accordingly.
  *

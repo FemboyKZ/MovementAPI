@@ -1,3 +1,12 @@
+#define PX_TOP_NORMAL_Z       0.999
+#define PX_WALL_PROBE_DIST    40.0
+#define PX_WALL_DIRS          8
+#define PX_WALL_NORMAL_Z      0.3
+#define PX_WALL_HALF_WIDTH    16.0
+#define PX_WALL_PRESS_MARGIN  2.0
+#define PX_FLOOR_PROBE_DROP   2.0
+#define PX_FLOOR_PROBE_TOL    4.0
+
 static DynamicDetour H_OnPlayerMove;
 static DynamicDetour H_OnDuck;
 static DynamicDetour H_OnLadderMove;
@@ -569,6 +578,7 @@ public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn
 	Address m_TouchList_m_pElements = LoadFromAddress(moveHelperAddr + view_as<Address>(8) + view_as<Address>(16), NumberType_Int32);
 
 	bool hitStandableSurface = false;
+	float bestStandableNormalZ = 0.0;
 	static ConVar sv_standable_normal;
 	if (sv_standable_normal == INVALID_HANDLE)
 	{
@@ -583,22 +593,26 @@ public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn
 		if (trace.plane.normal.z >= sv_standable_normal.FloatValue)
 		{
 			hitStandableSurface = true;
+			if (trace.plane.normal.z > bestStandableNormalZ)
+			{
+				bestStandableNormalZ = trace.plane.normal.z;
+			}
 		}
 	}
 
-	// Edgebug detection
-	
+	// Edgebug / pixelsurf detection
+
 	if (hitStandableSurface)
 	{
 		float currentOrigin[3], groundEndPoint[3];
-		
+
 		GameMove_GetOrigin(pThis, currentOrigin);
 		groundEndPoint = currentOrigin;
 		groundEndPoint[2] -= 2.0;
 		float mins[3] = {-16.0, -16.0, 0.0};
 		float maxs[3] = {16.0, 16.0, 0.0};
 		TR_TraceHullFilter(currentOrigin, groundEndPoint, mins, maxs, MASK_PLAYERSOLID, TraceEntityFilterPlayers, client);
-		
+
 		float groundPos[3];
 		TR_GetEndPosition(groundPos);
 		
@@ -606,6 +620,14 @@ public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn
 		if (!TR_DidHit())
 		{
 			Call_OnPlayerEdgebug(client, gF_Origin[client], gF_Velocity[client]);
+
+			float wallPos[3], wallNorm[3];
+			if (bestStandableNormalZ >= PX_TOP_NORMAL_Z
+				&& GetPressedWall(client, currentOrigin, wallPos, wallNorm)
+				&& !FloorProtrudesFromWall(client, wallPos, wallNorm, currentOrigin[2]))
+			{
+				Call_OnPlayerPixelsurf(client, gF_Origin[client], gF_Velocity[client]);
+			}
 		}
 	}
 
@@ -618,6 +640,101 @@ public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn
 	{
 		return MRES_Ignored;
 	}
+}
+
+// Pixelsurf 1/2: is the player pressed flush against a wall, and if so which one?
+static bool GetPressedWall(int client, const float origin[3], float wallPos[3], float wallNorm[3])
+{
+	float heights[2];
+	heights[0] = 18.0;
+	heights[1] = 40.0;
+
+	for (int h = 0; h < sizeof(heights); h++)
+	{
+		float start[3];
+		start = origin;
+		start[2] += heights[h];
+
+		for (int d = 0; d < PX_WALL_DIRS; d++)
+		{
+			float yaw = DegToRad(d * (360.0 / PX_WALL_DIRS));
+			float dir[3];
+			dir[0] = Cosine(yaw);
+			dir[1] = Sine(yaw);
+
+			float end[3];
+			end[0] = start[0] + dir[0] * PX_WALL_PROBE_DIST;
+			end[1] = start[1] + dir[1] * PX_WALL_PROBE_DIST;
+			end[2] = start[2];
+
+			TR_TraceRayFilter(start, end, MASK_PLAYERSOLID, RayType_EndPoint, TraceEntityFilterPlayers, client);
+			if (!TR_DidHit())
+			{
+				continue;
+			}
+
+			float normal[3];
+			TR_GetPlaneNormal(null, normal);
+			if (FloatAbs(normal[2]) >= PX_WALL_NORMAL_Z)
+			{
+				continue;
+			}
+
+			float hitPos[3];
+			TR_GetEndPosition(hitPos);
+			float perp = FloatAbs((start[0] - hitPos[0]) * normal[0] + (start[1] - hitPos[1]) * normal[1]);
+			float support = PX_WALL_HALF_WIDTH * (FloatAbs(normal[0]) + FloatAbs(normal[1]));
+			if (perp <= support + PX_WALL_PRESS_MARGIN)
+			{
+				wallPos = hitPos;
+				wallNorm = normal;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+// Pixelsurf 2/2: does a real, walkable floor protrude from the wall at the catch height?
+static bool FloorProtrudesFromWall(int client, const float wallPos[3], const float wallNorm[3], float catchZ)
+{
+	float outs[2];
+	outs[0] = 4.0;
+	outs[1] = 8.0;
+
+	for (int i = 0; i < sizeof(outs); i++)
+	{
+		float start[3];
+		start[0] = wallPos[0] + wallNorm[0] * outs[i];
+		start[1] = wallPos[1] + wallNorm[1] * outs[i];
+		start[2] = catchZ + PX_FLOOR_PROBE_DROP;
+
+		float end[3];
+		end[0] = start[0];
+		end[1] = start[1];
+		end[2] = catchZ - PX_FLOOR_PROBE_DROP;
+
+		TR_TraceRayFilter(start, end, MASK_PLAYERSOLID, RayType_EndPoint, TraceEntityFilterPlayers, client);
+		if (!TR_DidHit())
+		{
+			continue;
+		}
+
+		float normal[3];
+		TR_GetPlaneNormal(null, normal);
+		if (normal[2] < PX_TOP_NORMAL_Z)
+		{
+			continue;
+		}
+
+		float hitPos[3];
+		TR_GetEndPosition(hitPos);
+		if (FloatAbs(hitPos[2] - catchZ) <= PX_FLOOR_PROBE_TOL)
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 static void NobugLandingOrigin(int client, float landingOrigin[3])
