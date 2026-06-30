@@ -49,6 +49,11 @@ float gF_TraceStartOrigin[MAXPLAYERS + 1][MAX_BUMPS][3];
 float gF_TraceEndOrigin[MAXPLAYERS + 1][MAX_BUMPS][3];
 float gF_TraceNormal[MAXPLAYERS + 1][MAX_BUMPS][3];
 
+bool gB_PendingEdgebug[MAXPLAYERS + 1];
+int gI_PendingEdgebugTick[MAXPLAYERS + 1];
+float gF_PendingEdgebugOrigin[MAXPLAYERS + 1][3];
+float gF_PendingEdgebugVelocity[MAXPLAYERS + 1][3];
+
 void HookGameMovementFunctions()
 {
 	HookGameMovementFunction(H_OnDuck, "CCSGameMovement::Duck", DHooks_OnDuck_Pre, DHooks_OnDuck_Post);
@@ -494,6 +499,16 @@ public MRESReturn DHooks_OnCategorizePosition_Post(Address pThis)
 		return MRES_Ignored;
 	}
 	bool ground = Movement_GetOnGround(client);
+
+	if (gB_PendingEdgebug[client])
+	{
+		if (!ground && gI_PendingEdgebugTick[client] == GetGameTickCount())
+		{
+			Call_OnPlayerEdgebug(client, gF_PendingEdgebugOrigin[client], gF_PendingEdgebugVelocity[client]);
+		}
+		gB_PendingEdgebug[client] = false;
+	}
+
 	// Ground state changed!
 	if (gB_PrevOnGround[client] != ground)
 	{
@@ -590,32 +605,44 @@ public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn
 		}
 	}
 
+	// An edgebug requires the player to start the tick airborne.
+	// Walking on ground keeps FL_ONGROUND set, so it never qualifies.
+	bool startedAirborne = (GetEntityFlags(client) & FL_ONGROUND) == 0;
+
 	// Edgebug / pixelsurf detection.
 	if (bestNormalZ >= PX_TOP_NORMAL_Z)
 	{
 		float currentOrigin[3], groundEndPoint[3];
 
 		GameMove_GetOrigin(pThis, currentOrigin);
-		groundEndPoint = currentOrigin;
-		groundEndPoint[2] -= 2.0;
 		float mins[3] = {-16.0, -16.0, 0.0};
 		float maxs[3] = {16.0, 16.0, 0.0};
+
+		groundEndPoint = currentOrigin;
+		groundEndPoint[2] -= 2.0;
 		TR_TraceHullFilter(currentOrigin, groundEndPoint, mins, maxs, MASK_PLAYERSOLID, TraceEntityFilterPlayers, client);
+		bool noGroundUnderfoot = !TR_DidHit();
 
-		float groundPos[3];
-		TR_GetEndPosition(groundPos);
-
-		// Note: Origin and velocity are not updated yet.
-		if (!TR_DidHit())
+		// Pixelsurf: pressed flush against a wall with no real floor underneath.
+		// Detected immediately, and it takes priority over an edgebug this tick.
+		bool pixelsurfed = false;
+		if (noGroundUnderfoot)
 		{
-			Call_OnPlayerEdgebug(client, gF_Origin[client], gF_Velocity[client]);
-
 			float wallPos[3], wallNorm[3];
 			if (GetPressedWall(client, currentOrigin, wallPos, wallNorm)
 				&& !FloorProtrudesFromWall(client, wallPos, wallNorm, currentOrigin[2]))
 			{
 				Call_OnPlayerPixelsurf(client, gF_Origin[client], gF_Velocity[client]);
+				pixelsurfed = true;
 			}
+		}
+
+		if (startedAirborne && !pixelsurfed)
+		{
+			gB_PendingEdgebug[client] = true;
+			gI_PendingEdgebugTick[client] = GetGameTickCount();
+			gF_PendingEdgebugOrigin[client] = gF_Origin[client];
+			gF_PendingEdgebugVelocity[client] = gF_Velocity[client];
 		}
 	}
 
