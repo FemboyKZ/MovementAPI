@@ -1,18 +1,18 @@
 # MovementAPI
 
-[![Build Status](https://travis-ci.org/danzayau/MovementAPI.svg?branch=master)](https://travis-ci.org/danzayau/MovementAPI)
+![Downloads](https://img.shields.io/github/downloads/FemboyKZ/movementapi/total?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/FemboyKZ/movementapi?style=flat-square) ![Open issues](https://img.shields.io/github/issues/FemboyKZ/movementapi?style=flat-square) ![Closed issues](https://img.shields.io/github/issues-closed/FemboyKZ/movementapi?style=flat-square) ![Size](https://img.shields.io/github/repo-size/FemboyKZ/movementapi?style=flat-square) ![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/FemboyKZ/movementapi/push-compile.yml?style=flat-square)
 
 A SourceMod API focused on player movement in the form of a [function stock libary](addons/sourcemod/scripting/include/movement.inc) and an optional plugin with [forwards and natives](addons/sourcemod/scripting/include/movementapi.inc). MovementAPI officially supports CS:GO servers only.
 
-### Requirements
+## Requirements
 
 - SourceMod ^1.11
 
-### Plugin Installation
+## Plugin Installation
 
 - Download and extract `MovementAPI-vX.X.X.zip` from the [latest GitHub release](https://github.com/danzayau/MovementAPI/releases/latest) to `csgo/` in your server directory.
 
-### Terminology
+## Terminology
 
 - **Takeoff** - Becoming airborne, including jumping, falling, getting off a ladder and leaving noclip.
 - **Landing** - Leaving the air, including landing on the ground, grabbing a ladder, leaving noclip while on ground and entering noclip.
