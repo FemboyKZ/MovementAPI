@@ -20,20 +20,38 @@
 	Becoming airborne, including jumping, falling, getting off a ladder and leaving noclip.
 
 	Landing
-	Leaving the air, including landing on the ground, grabbing a ladder and entering noclip.
+	Leaving the air, including landing on the ground, grabbing a ladder, leaving noclip
+	while on ground and entering noclip.
 
 	Perfect Bunnyhop (Perf)
 	When the player has jumped in the tick after landing and keeps their speed.
 
  	Duckbug/Crouchbug
-	When the player sucessfully lands due to uncrouching from mid air and not by falling 
+	When the player successfully lands due to uncrouching from mid air and not by falling
 	down. This causes no stamina loss or fall damage upon landing.
 
 	Jumpbug
- 	This is achieved by duckbugging and jumping at the same time. The player is never seen 
-	as 'on ground' when bunnyhopping from a tick by tick perspective. A jumpbug inherits 
-	the same behavior as a duckbug/crouchbug, along with its effects such as maintaining 
+ 	This is achieved by duckbugging and jumping at the same time. The player is never seen
+	as 'on ground' when bunnyhopping from a tick by tick perspective. A jumpbug inherits
+	the same behavior as a duckbug/crouchbug, along with its effects such as maintaining
 	speed due to no stamina loss.
+
+	Edgebug
+	When the player hits the very edge of a block and slides off it within the same tick,
+	before the ground check runs. The flat contact zeroes their vertical velocity, but
+	they start and end the tick airborne, keeping horizontal speed and taking no fall
+	damage.
+
+	Pixelsurf
+	When the player stays suspended on the seam between two flush wall brushes. The engine
+	keeps clipping them against the invisible top plane of the lower brush each tick,
+	letting them hang on the wall and slide along it with no floor beneath. Requires being
+	within 0.03125 units above the seam while pressed against the wall.
+
+	Texturebug
+	When the player falls past the open underside of an overhanging brush while hugging
+	its wall. The engine briefly clips them against the brush's top plane instead of the
+	side they actually crossed, zeroing vertical velocity mid-air for that tick.
 
 	Distbug
 	Landing behavior varies depending on whether the player lands close to the edge of a 
