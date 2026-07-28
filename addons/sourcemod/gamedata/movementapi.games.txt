@@ -167,8 +167,8 @@
 			}
 			"TracePlayerBBox"
 			{
-				"windows"	"10"
-				"linux"		"9"
+				"windows"	"15"
+				"linux"		"14"
 			}
 		}
 		"Signatures"
