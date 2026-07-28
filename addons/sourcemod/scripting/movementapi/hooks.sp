@@ -22,6 +22,7 @@ static DynamicDetour H_OnTryPlayerMove;
 static DynamicHook H_OnTracePlayerBBox;
 static int gI_TraceHookId = INVALID_HOOK_ID;
 static bool gB_TraceHookAvailable;
+static bool gB_TraceHookAttempted;
 static Address moveHelperAddr;
 
 static bool gB_TryPlayerMoveThisTick[MAXPLAYERS + 1];
@@ -633,13 +634,20 @@ public MRESReturn DHooks_OnTryPlayerMove_Pre(Address pThis, DHookReturn hReturn,
 	gB_SeededFirstTrace[client] = false;
 
 	// CGameMovement is a singleton, so one raw hook covers every player.
-	if (gB_TraceHookAvailable && gI_TraceHookId == INVALID_HOOK_ID)
+	// HookRaw throws rather than returning on a bad setup, which aborts this callback,
+	// so mark the attempt before calling it. Otherwise a throw retries every tick.
+	if (gB_TraceHookAvailable && !gB_TraceHookAttempted)
 	{
+		gB_TraceHookAttempted = true;
+		gB_TraceHookAvailable = false;
 		gI_TraceHookId = H_OnTracePlayerBBox.HookRaw(Hook_Post, pThis, DHooks_OnTracePlayerBBox_Post);
 		if (gI_TraceHookId == INVALID_HOOK_ID)
 		{
-			gB_TraceHookAvailable = false;
 			LogError("Failed to hook CGameMovement::TracePlayerBBox, using the MoveHelper touch list instead.");
+		}
+		else
+		{
+			gB_TraceHookAvailable = true;
 		}
 	}
 

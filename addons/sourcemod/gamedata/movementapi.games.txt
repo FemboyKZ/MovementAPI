@@ -129,6 +129,7 @@
 			"CGameMovement::TracePlayerBBox"
 			{
 				"offset"	"TracePlayerBBox"
+				"hooktype"	"raw"
 				"this"		"address"
 				"return"	"void"
 				"arguments"
