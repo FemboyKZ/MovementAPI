@@ -1214,11 +1214,10 @@ static void NobugLandingOrigin(int client, float landingOrigin[3])
 	ScaleVector(scaledVelocity, GetTickInterval());
 	AddVectors(origin, scaledVelocity, firstTraceEndpoint);
 
-	// Same hull shape TryPlayerMove would have swept.
-	float hullMins[3], hullMaxs[3];
-	GetClientMins(client, hullMins);
-	GetClientMaxs(client, hullMaxs);
-	TR_TraceHullFilter(origin, firstTraceEndpoint, hullMins, hullMaxs, MASK_PLAYERSOLID, TraceEntityFilterPlayers, client);
+	// Foot-level plate, not the full hull.
+	float mins[3] = {-16.0, -16.0, 0.0};
+	float maxs[3] = {16.0, 16.0, 0.0};
+	TR_TraceHullFilter(origin, firstTraceEndpoint, mins, maxs, MASK_PLAYERSOLID, TraceEntityFilterPlayers, client);
 	if (!TR_DidHit())
 	{
 		// It is possible to not hit the trace, if your vertical velocity is low enough.
