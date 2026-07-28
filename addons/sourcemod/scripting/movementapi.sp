@@ -220,6 +220,8 @@ static void ResetClientData(int client)
 	gB_OldWalkMoved[client] = false;
 
 	gI_CollisionCount[client] = 0;
+	gB_InTryPlayerMove[client] = false;
+	gB_SeededFirstTrace[client] = false;
 	gB_PendingEdgebug[client] = false;
 	gI_PendingEdgebugTick[client] = 0;
 	gF_PendingEdgebugOrigin[client] = view_as<float>( { 0.0, 0.0, 0.0 } );

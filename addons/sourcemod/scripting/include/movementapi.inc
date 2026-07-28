@@ -565,11 +565,9 @@ native void Movement_SetLandingVelocity(int client, float velocity[3]);
  * Get the player's number of collisions during movement processing.
  * This function should ideally be called after inside Movement_OnTryPlayerMovePost.
  *
- * Covers the whole tick, not just the current TryPlayerMove call, because the engine
- * resets its touch list once per command and StepMove can call TryPlayerMove twice.
- *
- * Not a complete list of the tick's surfaces: the engine records only the first contact
- * per entity, and the world is one entity, so clipping a wall then a floor reports just the wall.
+ * Every blocking bump trace of the most recent TryPlayerMove call, in bump order,
+ * including repeated contacts with the world (wall then floor reports both).
+ * Reset on each TryPlayerMove call, and StepMove can run two per tick.
  *
  * @param client     Client index.
  * @return           Number of collisions stored, 0 to MOVEMENT_MAX_COLLISIONS.
