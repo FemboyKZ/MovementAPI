@@ -709,14 +709,24 @@ public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn
 
 	gB_TryPlayerMoveThisTick[client] = true;
 
+	// bestNormalZ drives detection and may be disp-refined.
+	// PxSeamVerdict gets the raw plane values, since plane dist is only a world height for a truly axial plane.
 	float bestNormalZ = 0.0;
-	// Plane dist of the flattest contact. World z of the plane when its normal is (0,0,1).
+	float bestRawNormalZ = 0.0;
 	float seamZ = 0.0;
 	for (int i = 0; i < gI_CollisionCount[client]; i++)
 	{
-		if (gF_TraceNormal[client][i][2] > bestNormalZ)
+		float rawNormalZ = gF_TraceNormal[client][i][2];
+		float normalZ = rawNormalZ;
+		// Hull normals are coarse at displacement seams. Check the mesh's true tri normal.
+		if (gB_BSPPeekReady && rawNormalZ >= STANDABLE_NORMAL_Z && rawNormalZ < PX_TOP_NORMAL_Z)
 		{
-			bestNormalZ = gF_TraceNormal[client][i][2];
+			normalZ = RefineDispNormalZ(gF_TraceEndOrigin[client][i], rawNormalZ);
+		}
+		if (normalZ > bestNormalZ)
+		{
+			bestNormalZ = normalZ;
+			bestRawNormalZ = rawNormalZ;
 			seamZ = gF_TraceDist[client][i];
 		}
 	}
@@ -749,7 +759,7 @@ public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn
 			int bspVerdict = -1;
 			if (gB_BSPPeekReady)
 			{
-				bspVerdict = PxSeamVerdict(currentOrigin, seamZ, bestNormalZ);
+				bspVerdict = PxSeamVerdict(currentOrigin, seamZ, bestRawNormalZ);
 			}
 			bool onSeam;
 			if (bspVerdict >= 0)
@@ -894,6 +904,24 @@ static bool FloorProtrudesFromWall(int client, const float wallPos[3], const flo
 		}
 	}
 	return false;
+}
+
+// True tri normal z of the disp collision mesh at a contact, rawNormalZ if no disp there.
+// XY surface query first (picks the tread, not a seam riser), nearest-tri as fallback.
+static float RefineDispNormalZ(const float contactPos[3], float rawNormalZ)
+{
+	float normal[3];
+	float surfZ = BSP_DispSurfaceNormalAt(contactPos[0], contactPos[1], normal);
+	if (surfZ > BSP_DISP_NO_HIT && FloatAbs(surfZ - contactPos[2]) <= 4.0)
+	{
+		return normal[2];
+	}
+	float v0[3], v1[3], v2[3];
+	if (BSP_DispNearestTri(contactPos, 4.0, normal, v0, v1, v2) > BSP_DISP_NO_HIT)
+	{
+		return normal[2];
+	}
+	return rawNormalZ;
 }
 
 // Gate logic ported from fkz-routecalc pixelsurf/bsp.sp.

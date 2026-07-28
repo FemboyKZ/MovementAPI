@@ -114,6 +114,8 @@ forward void Movement_OnPlayerJump(int client, bool jumpbug);
  * so a tick detected as either raises its own forward instead and this one stays silent.
  * Only flat contact counts, meaning a plane normal z of at least 0.999,
  * so a plain slope landing does not qualify.
+ * With bsppeek, displacement contacts use the collision mesh's true tri normal,
+ * since hull traces report coarse normals at disp seams.
  * Setting velocity when this is called may not be effective.
  *
  * @param client		Client index.
