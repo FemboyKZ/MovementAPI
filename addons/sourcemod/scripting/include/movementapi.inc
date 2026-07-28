@@ -110,8 +110,8 @@ forward void Movement_OnPlayerJump(int client, bool jumpbug);
 /**
  * Called when a player edgebugs.
  * Fires at most once per tick.
- * A pixelsurf matches the same signature, so a tick detected as a pixelsurf raises
- * Movement_OnPlayerPixelsurf instead and this forward stays silent.
+ * A pixelsurf or texturebug matches the same signature,
+ * so a tick detected as either raises its own forward instead and this one stays silent.
  * Only flat contact counts, meaning a plane normal z of at least 0.999,
  * so a plain slope landing does not qualify.
  * Setting velocity when this is called may not be effective.
@@ -126,6 +126,8 @@ forward void Movement_OnPlayerEdgebug(int client, float origin[3], float velocit
  * Called when a player pixelsurfs.
  * Fires at most once per tick, and once per tick the player stays suspended on the surf.
  * Takes priority over Movement_OnPlayerEdgebug, which is suppressed for that tick.
+ * With the bsppeek extension the seam is verified against the map's brush tables.
+ * Falls back to ray probing when the extension is absent or the tables cannot resolve the seam.
  * Setting velocity when this is called may not be effective.
  *
  * @param client		Client index.
@@ -133,6 +135,18 @@ forward void Movement_OnPlayerEdgebug(int client, float origin[3], float velocit
  * @param velocity		Player velocity before pixelsurf.
  */
 forward void Movement_OnPlayerPixelsurf(int client, float origin[3], float velocity[3]);
+
+/**
+ * Called when a player texturebugs.
+ * Fires at most once per tick and suppresses Movement_OnPlayerEdgebug for that tick.
+ * Requires the bsppeek extension. Without it such ticks are reported as edgebugs.
+ * Setting velocity when this is called may not be effective.
+ *
+ * @param client		Client index.
+ * @param origin		Player origin before texturebug.
+ * @param velocity		Player velocity before texturebug.
+ */
+forward void Movement_OnPlayerTexturebug(int client, float origin[3], float velocity[3]);
 
 /**
  * Called before PlayerMove movement function is called.
@@ -543,8 +557,7 @@ native void Movement_SetLandingVelocity(int client, float velocity[3]);
 
 /**
  * Largest number of collisions MovementAPI stores per tick.
- * Movement_GetCollisionCount never returns more than this,
- * so an index below the reported count is always safe to pass to the accessors below.
+ * An index below the reported count is always safe to pass to the accessors below.
  */
 #define MOVEMENT_MAX_COLLISIONS 4
 
@@ -552,13 +565,11 @@ native void Movement_SetLandingVelocity(int client, float velocity[3]);
  * Get the player's number of collisions during movement processing.
  * This function should ideally be called after inside Movement_OnTryPlayerMovePost.
  *
- * The count covers the whole tick, not just the current TryPlayerMove call,
- * because the engine resets its touch list once per command and StepMove can call TryPlayerMove twice.
- * It is capped at MOVEMENT_MAX_COLLISIONS.
+ * Covers the whole tick, not just the current TryPlayerMove call, because the engine
+ * resets its touch list once per command and StepMove can call TryPlayerMove twice.
  *
- * Note: the engine records only the first contact with any given entity per tick.
- * The world is a single entity, so a tick that clips a wall and then a floor reports just the wall.
- * Do not treat this as a complete list of the tick's surfaces.
+ * Not a complete list of the tick's surfaces: the engine records only the first contact
+ * per entity, and the world is one entity, so clipping a wall then a floor reports just the wall.
  *
  * @param client     Client index.
  * @return           Number of collisions stored, 0 to MOVEMENT_MAX_COLLISIONS.
