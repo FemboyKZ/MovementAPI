@@ -5,6 +5,8 @@
 
 #include <movement>
 
+#include <bsppeek>
+
 #pragma newdecls required
 #pragma semicolon 1
 
@@ -13,10 +15,10 @@
 public Plugin myinfo = 
 {
 	name = "MovementAPI", 
-	author = "DanZay", 
+	author = "DanZay, FKZ Fork", 
 	description = "Provides API focused on player movement", 
-	version = "2.4.5",
-	url = "https://github.com/danzayau/MovementAPI"
+	version = "2.5.0",
+	url = "https://github.com/FemboyKZ/MovementAPI"
 };
 
 GameData gH_GameData;
@@ -80,6 +82,32 @@ void HookEvents()
 {
 	PrepSDKCalls();
 	HookGameMovementFunctions();
+}
+
+public void OnAllPluginsLoaded()
+{
+	UpdateBSPPeekStatus();
+}
+
+public void OnMapStart()
+{
+	UpdateBSPPeekStatus();
+}
+
+public void OnLibraryAdded(const char[] name)
+{
+	if (StrEqual(name, "bsppeek"))
+	{
+		UpdateBSPPeekStatus();
+	}
+}
+
+public void OnLibraryRemoved(const char[] name)
+{
+	if (StrEqual(name, "bsppeek"))
+	{
+		gB_BSPPeekReady = false;
+	}
 }
 
 public void OnClientPutInServer(int client)
@@ -198,6 +226,7 @@ static void ResetClientData(int client)
 	gF_PendingEdgebugVelocity[client] = view_as<float>( { 0.0, 0.0, 0.0 } );
 	gI_LastEdgebugTick[client] = 0;
 	gI_LastPixelsurfTick[client] = 0;
+	gI_LastTexturebugTick[client] = 0;
 }
 
 static void UpdateTurning(int client, const float oldEyeAngles[3], const float eyeAngles[3])
