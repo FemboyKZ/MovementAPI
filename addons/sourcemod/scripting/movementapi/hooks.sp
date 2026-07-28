@@ -1,5 +1,6 @@
 #define NON_JUMP_VELOCITY     140.0
 #define STANDABLE_NORMAL_Z    0.7
+#define DISP_REFINE_MIN_NORMAL_Z 0.99
 
 #define PX_TOP_NORMAL_Z       0.999
 #define PX_WALL_PROBE_DIST    40.0
@@ -799,7 +800,7 @@ public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn
 		float rawNormalZ = gF_TraceNormal[client][i][2];
 		float normalZ = rawNormalZ;
 		// Hull normals are coarse at displacement seams. Check the mesh's true tri normal.
-		if (gB_BSPPeekReady && rawNormalZ >= STANDABLE_NORMAL_Z && rawNormalZ < PX_TOP_NORMAL_Z)
+		if (gB_BSPPeekReady && rawNormalZ >= DISP_REFINE_MIN_NORMAL_Z && rawNormalZ < PX_TOP_NORMAL_Z)
 		{
 			normalZ = RefineDispNormalZ(gF_TraceEndOrigin[client][i], rawNormalZ);
 		}
