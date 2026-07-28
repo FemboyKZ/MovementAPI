@@ -19,7 +19,11 @@ static DynamicDetour H_OnAirAccelerate;
 static DynamicDetour H_OnWalkMove;
 static DynamicDetour H_OnCategorizePosition;
 static DynamicDetour H_OnTryPlayerMove;
-static DynamicDetour H_OnTracePlayerBBox;
+static DynamicHook H_OnTracePlayerBBox;
+static int gI_TraceHookId = INVALID_HOOK_ID;
+static bool gB_TraceHookAvailable;
+static Address moveHelperAddr;
+
 static bool gB_TryPlayerMoveThisTick[MAXPLAYERS + 1];
 
 // trace_t field offsets, 32-bit CGameTrace.
@@ -94,14 +98,18 @@ void HookGameMovementFunctions()
 	HookGameMovementFunction(H_OnCategorizePosition, "CGameMovement::CategorizePosition", DHooks_OnCategorizePosition_Pre, DHooks_OnCategorizePosition_Post);
 	HookGameMovementFunction(H_OnTryPlayerMove, "CGameMovement::TryPlayerMove", DHooks_OnTryPlayerMove_Pre, DHooks_OnTryPlayerMove_Post);
 
-	H_OnTracePlayerBBox = DynamicDetour.FromConf(gH_GameData, "CGameMovement::TracePlayerBBox");
-	if (!H_OnTracePlayerBBox)
+	moveHelperAddr = GameConfGetAddress(gH_GameData, "sm_pSingleton");
+	if (!moveHelperAddr)
 	{
-		SetFailState("Failed to find CGameMovement::TracePlayerBBox config");
+		SetFailState("Failed to find IMoveHelper::sm_pSingleton.");
 	}
-	if (!H_OnTracePlayerBBox.Enable(Hook_Post, DHooks_OnTracePlayerBBox_Post))
+
+	// The instance is needed to hook, so this only resolves the setup here.
+	H_OnTracePlayerBBox = DynamicHook.FromConf(gH_GameData, "CGameMovement::TracePlayerBBox");
+	gB_TraceHookAvailable = H_OnTracePlayerBBox != null;
+	if (!gB_TraceHookAvailable)
 	{
-		SetFailState("Failed to enable detour on CGameMovement::TracePlayerBBox");
+		LogError("CGameMovement::TracePlayerBBox unavailable, using the MoveHelper touch list instead.");
 	}
 }
 
@@ -624,6 +632,17 @@ public MRESReturn DHooks_OnTryPlayerMove_Pre(Address pThis, DHookReturn hReturn,
 	gB_InTryPlayerMove[client] = true;
 	gB_SeededFirstTrace[client] = false;
 
+	// CGameMovement is a singleton, so one raw hook covers every player.
+	if (gB_TraceHookAvailable && gI_TraceHookId == INVALID_HOOK_ID)
+	{
+		gI_TraceHookId = H_OnTracePlayerBBox.HookRaw(Hook_Post, pThis, DHooks_OnTracePlayerBBox_Post);
+		if (gI_TraceHookId == INVALID_HOOK_ID)
+		{
+			gB_TraceHookAvailable = false;
+			LogError("Failed to hook CGameMovement::TracePlayerBBox, using the MoveHelper touch list instead.");
+		}
+	}
+
 	// Seed bump 0 from pFirstTrace so the reuse path isn't a blind spot.
 	if (!DHookIsNullParam(hParams, 2))
 	{
@@ -708,6 +727,37 @@ public MRESReturn DHooks_OnTracePlayerBBox_Post(Address pThis, DHookParam hParam
 	return MRES_Ignored;
 }
 
+// IMoveHelper's touch list, reset once per RunCommand.
+// Dedupes by entity and the world is one entity, so a tick that clips a wall then a floor only reports the wall.
+static void ReadTouchListCollisions(int client)
+{
+	int touchCount = LoadFromAddress(moveHelperAddr + view_as<Address>(8) + view_as<Address>(12), NumberType_Int32);
+	if (touchCount > MAX_BUMPS)
+	{
+		// A CUtlVector with no fixed cap. Clamp before indexing.
+		touchCount = MAX_BUMPS;
+	}
+	else if (touchCount < 0)
+	{
+		touchCount = 0;
+	}
+	if (touchCount == 0)
+	{
+		return;
+	}
+
+	Address elements = LoadFromAddress(moveHelperAddr + view_as<Address>(8) + view_as<Address>(16), NumberType_Int32);
+	for (int i = 0; i < touchCount; i++)
+	{
+		Trace trace = Trace(elements + view_as<Address>(i * 96) + view_as<Address>(12));
+		trace.startpos.ToArray(gF_TraceStartOrigin[client][i]);
+		trace.endpos.ToArray(gF_TraceEndOrigin[client][i]);
+		trace.plane.normal.ToArray(gF_TraceNormal[client][i]);
+		gF_TraceDist[client][i] = trace.plane.dist;
+	}
+	gI_CollisionCount[client] = touchCount;
+}
+
 public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn, DHookParam hParams)
 {
 	int client = GetClientFromGameMovementAddress(pThis);
@@ -722,6 +772,14 @@ public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn
 	}
 
 	gB_TryPlayerMoveThisTick[client] = true;
+
+	// Nothing captured means the hook is absent, or its calls were inlined away.
+	// The touch list is the pre-hook source: entity-deduped, so repeated world contacts
+	// collapse into one, but it is always populated.
+	if (gI_CollisionCount[client] == 0)
+	{
+		ReadTouchListCollisions(client);
+	}
 
 	// bestNormalZ drives detection and may be disp-refined.
 	// PxSeamVerdict gets the raw plane values, since plane dist is only a world height for a truly axial plane.

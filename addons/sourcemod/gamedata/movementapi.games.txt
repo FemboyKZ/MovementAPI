@@ -128,8 +128,7 @@
 			}
 			"CGameMovement::TracePlayerBBox"
 			{
-				"signature" "CGameMovement::TracePlayerBBox"
-				"callconv"	"thiscall"
+				"offset"	"TracePlayerBBox"
 				"this"		"address"
 				"return"	"void"
 				"arguments"
@@ -164,6 +163,11 @@
 				"windows"	"506"
 				"linux"		"507"
 				"mac"		"507"
+			}
+			"TracePlayerBBox"
+			{
+				"windows"	"10"
+				"linux"		"9"
 			}
 		}
 		"Signatures"
@@ -221,12 +225,6 @@
 				"library"	"server"
 				"windows"	"\x55\x8B\xEC\x83\xE4\xF8\x81\xEC\x38\x01\x00\x00\xF3\x0F\x10\x35\x2A\x2A\x2A\x2A"
 				"linux"		"\x55\x66\x0F\xEF\xDB\x89\xE5\x57\x56\x53\x81\xEC\x2A\x2A\x2A\x2A\x8B\x7D\x08"
-			}
-			"CGameMovement::TracePlayerBBox"
-			{
-				"library"	"server"
-				"windows"	"\x53\x8B\xDC\x83\xEC\x08\x83\xE4\xF0\x83\xC4\x04\x55\x8B\x6B\x04\x89\x6C\x24\x04\x8B\xEC\x83\xEC\x7C\x56"
-				"linux"		"@_ZN13CGameMovement15TracePlayerBBoxERK6VectorS2_jiR10CGameTrace"
 			}
 		}
 	}
