@@ -17,7 +17,7 @@ static DynamicDetour H_OnWalkMove;
 static DynamicDetour H_OnCategorizePosition;
 static DynamicDetour H_OnTryPlayerMove;
 static Address moveHelperAddr;
-static bool tryPlayerMoveThisTick;
+static bool gB_TryPlayerMoveThisTick[MAXPLAYERS + 1];
 
 float gF_Origin[MAXPLAYERS + 1][3];
 float gF_Velocity[MAXPLAYERS + 1][3];
@@ -53,6 +53,9 @@ bool gB_PendingEdgebug[MAXPLAYERS + 1];
 int gI_PendingEdgebugTick[MAXPLAYERS + 1];
 float gF_PendingEdgebugOrigin[MAXPLAYERS + 1][3];
 float gF_PendingEdgebugVelocity[MAXPLAYERS + 1][3];
+
+int gI_LastEdgebugTick[MAXPLAYERS + 1];
+int gI_LastPixelsurfTick[MAXPLAYERS + 1];
 
 void HookGameMovementFunctions()
 {
@@ -438,7 +441,9 @@ public MRESReturn DHooks_OnPlayerMove_Pre(Address pThis)
 	gB_Jumpbugged[client] = false;
 	gB_Jumped[client] = false;
 	gB_TakeoffFromLadder[client] = false;
-	
+	gB_TryPlayerMoveThisTick[client] = false;
+	gI_CollisionCount[client] = 0;
+
 	Action result = UpdateMoveData(pThis, client, Call_OnPlayerMovePre);
 
 	if (result != Plugin_Continue)
@@ -459,7 +464,7 @@ public MRESReturn DHooks_OnPlayerMove_Post(Address pThis)
 		return MRES_Ignored;
 	}
 	Action result = UpdateMoveData(pThis, client, Call_OnPlayerMovePost);
-	tryPlayerMoveThisTick = false;
+	gB_TryPlayerMoveThisTick[client] = false;
 	if (result != Plugin_Continue)
 	{
 		return MRES_Handled;
@@ -502,8 +507,10 @@ public MRESReturn DHooks_OnCategorizePosition_Post(Address pThis)
 
 	if (gB_PendingEdgebug[client])
 	{
-		if (!ground && gI_PendingEdgebugTick[client] == GetGameTickCount())
+		if (!ground && gI_PendingEdgebugTick[client] == GetGameTickCount()
+			&& gI_LastEdgebugTick[client] != GetGameTickCount())
 		{
+			gI_LastEdgebugTick[client] = GetGameTickCount();
 			Call_OnPlayerEdgebug(client, gF_PendingEdgebugOrigin[client], gF_PendingEdgebugVelocity[client]);
 		}
 		gB_PendingEdgebug[client] = false;
@@ -587,13 +594,24 @@ public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn
 		return MRES_Ignored;
 	}
 
-	tryPlayerMoveThisTick = true;
-	gI_CollisionCount[client] = LoadFromAddress(moveHelperAddr + view_as<Address>(8) + view_as<Address>(12), NumberType_Int32);
+	gB_TryPlayerMoveThisTick[client] = true;
+
+	int touchCount = LoadFromAddress(moveHelperAddr + view_as<Address>(8) + view_as<Address>(12), NumberType_Int32);
+	if (touchCount > MAX_BUMPS)
+	{
+		// The touch list is a CUtlVector with no fixed cap. Clamp before indexing.
+		touchCount = MAX_BUMPS;
+	}
+	else if (touchCount < 0)
+	{
+		touchCount = 0;
+	}
+	gI_CollisionCount[client] = touchCount;
 
 	Address m_TouchList_m_pElements = LoadFromAddress(moveHelperAddr + view_as<Address>(8) + view_as<Address>(16), NumberType_Int32);
 
 	float bestNormalZ = 0.0;
-	for (int i = 0; i < gI_CollisionCount[client]; i++)
+	for (int i = 0; i < touchCount; i++)
 	{
 		Trace trace = Trace(m_TouchList_m_pElements + view_as<Address>(i*96) + view_as<Address>(12));
 		trace.startpos.ToArray(gF_TraceStartOrigin[client][i]);
@@ -632,8 +650,12 @@ public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn
 			if (GetPressedWall(client, currentOrigin, wallPos, wallNorm)
 				&& !FloorProtrudesFromWall(client, wallPos, wallNorm, currentOrigin[2]))
 			{
-				Call_OnPlayerPixelsurf(client, gF_Origin[client], gF_Velocity[client]);
 				pixelsurfed = true;
+				if (gI_LastPixelsurfTick[client] != GetGameTickCount())
+				{
+					gI_LastPixelsurfTick[client] = GetGameTickCount();
+					Call_OnPlayerPixelsurf(client, gF_Origin[client], gF_Velocity[client]);
+				}
 			}
 		}
 
@@ -797,7 +819,7 @@ static void NobugLandingOrigin(int client, float landingOrigin[3])
 	}
 
 	// Jump is bugged, try to use the trace result of TryPlayerMove if possible.
-	if (tryPlayerMoveThisTick && gI_CollisionCount[client] > 0)
+	if (gB_TryPlayerMoveThisTick[client] && gI_CollisionCount[client] > 0)
 	{
 		landingOrigin = gF_TraceEndOrigin[client][0];
 		return;
