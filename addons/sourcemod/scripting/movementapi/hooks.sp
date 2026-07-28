@@ -691,7 +691,7 @@ public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn
 		bool texturebugged = false;
 		if (!pixelsurfed && gB_BSPPeekReady)
 		{
-			texturebugged = CheckTexturebug(client, currentOrigin, seamZ);
+			texturebugged = CheckTexturebug(client, gF_Origin[client], seamZ);
 		}
 
 		if (startedAirborne && !pixelsurfed && !texturebugged)
@@ -894,9 +894,9 @@ static int PxSeamVerdictAt(const float samplePos[3], float seamZ)
 		return 1;
 	}
 
-	// Gate failed, but its out-params say why. Reject only on confirmed-bad signals.
+	// Gate failed, but it fills every out-param anyway, so reject on the confirmed-bad signals.
 	// Unresolved cases stay -1: brush-entity walls, leaf-boundary flush pairs, displacements.
-	if (BSP_FindBrushPairAtSeam(samplePos, seamZ, lower, upper))
+	if (lower >= 0 && upper >= 0)
 	{
 		if ((BSP_BrushContents(lower) & BSPP_MASK_PLAYERCOLLIDE) == 0)
 		{
