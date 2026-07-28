@@ -112,6 +112,8 @@ forward void Movement_OnPlayerJump(int client, bool jumpbug);
  * Fires at most once per tick.
  * A pixelsurf matches the same signature, so a tick detected as a pixelsurf raises
  * Movement_OnPlayerPixelsurf instead and this forward stays silent.
+ * Only flat contact counts, meaning a plane normal z of at least 0.999,
+ * so a plain slope landing does not qualify.
  * Setting velocity when this is called may not be effective.
  *
  * @param client		Client index.

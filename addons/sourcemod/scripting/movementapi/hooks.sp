@@ -628,6 +628,8 @@ public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn
 	bool startedAirborne = (GetEntityFlags(client) & FL_ONGROUND) == 0;
 
 	// Edgebug / pixelsurf detection.
+	// PX_TOP_NORMAL_Z is deliberately far stricter than the engine's 0.7 standable cutoff:
+	// an edgebug is a flat-floor clip that zeroes vertical velocity mid-tick, so a plain slope contact must not qualify.
 	if (bestNormalZ >= PX_TOP_NORMAL_Z)
 	{
 		float currentOrigin[3], groundEndPoint[3];
