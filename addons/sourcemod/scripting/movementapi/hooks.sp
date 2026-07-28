@@ -1,3 +1,6 @@
+#define NON_JUMP_VELOCITY     140.0
+#define STANDABLE_NORMAL_Z    0.7
+
 #define PX_TOP_NORMAL_Z       0.999
 #define PX_WALL_PROBE_DIST    40.0
 #define PX_WALL_DIRS          8
@@ -975,28 +978,74 @@ static bool CheckTexturebug(int client, const float origin[3], float seamZ)
 	return true;
 }
 
+// CategorizePosition's grounding trace: full hull 2u down, standable planes only.
+// A steep hit retries the corner sub-boxes (TracePlayerBBoxForGround),
+// but groundPos stays the main trace endpos, which is the engine's overwriteEndpos behavior.
+static bool TraceGroundParity(int client, const float origin[3], float groundPos[3])
+{
+	float hullMins[3], hullMaxs[3];
+	GetClientMins(client, hullMins);
+	GetClientMaxs(client, hullMaxs);
+
+	float endPoint[3];
+	endPoint = origin;
+	endPoint[2] -= 2.0;
+
+	TR_TraceHullFilter(origin, endPoint, hullMins, hullMaxs, MASK_PLAYERSOLID, TraceEntityFilterPlayers, client);
+	if (!TR_DidHit())
+	{
+		return false;
+	}
+	TR_GetEndPosition(groundPos);
+
+	float normal[3];
+	TR_GetPlaneNormal(null, normal);
+	if (normal[2] >= STANDABLE_NORMAL_Z)
+	{
+		return true;
+	}
+
+	// Engine quadrant order. It clamps the far half to 0, which for a player hull IS 0.
+	for (int q = 0; q < 4; q++)
+	{
+		float mins[3], maxs[3];
+		mins = hullMins;
+		maxs = hullMaxs;
+		switch (q)
+		{
+			case 0: { maxs[0] = 0.0; maxs[1] = 0.0; }
+			case 1: { mins[0] = 0.0; mins[1] = 0.0; }
+			case 2: { mins[1] = 0.0; maxs[0] = 0.0; }
+			case 3: { mins[0] = 0.0; maxs[1] = 0.0; }
+		}
+
+		TR_TraceHullFilter(origin, endPoint, mins, maxs, MASK_PLAYERSOLID, TraceEntityFilterPlayers, client);
+		if (!TR_DidHit())
+		{
+			continue;
+		}
+		TR_GetPlaneNormal(null, normal);
+		if (normal[2] >= STANDABLE_NORMAL_Z)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 static void NobugLandingOrigin(int client, float landingOrigin[3])
 {
-	// NOTE: Get ground position and distance to ground.
 	float groundEndPoint[3];
 	groundEndPoint = gF_Origin[client];
 	groundEndPoint[2] -= 2.0;
-	float mins[3] = {-16.0, -16.0, 0.0};
-	float maxs[3] = {16.0, 16.0, 0.0};
-	TR_TraceHullFilter(gF_Origin[client], groundEndPoint, mins, maxs, MASK_PLAYERSOLID, TraceEntityFilterPlayers, client);
-	
+
 	float groundPos[3];
-	TR_GetEndPosition(groundPos);
-	
-	// NOTE: This is almost guaranteed to hit because CategorizePosition does
-	// the exact same trace to determine if the player is on the ground or not.
-	if (!TR_DidHit())
+	if (!TraceGroundParity(client, gF_Origin[client], groundPos))
 	{
-		// Use groundEndPoint if trace fails, because this MIGHT
-		// give less distance in this extremely rare case.
+		// Use groundEndPoint, this MIGHT give less distance in this rare case.
 		groundPos = groundEndPoint;
 	}
-	
+
 	gB_Duckbugged[client] = gB_ProcessingDuck[client];
 	float distanceToGround = gF_Origin[client][2] - groundPos[2];
 	float velocity[3], origin[3];
@@ -1025,13 +1074,25 @@ static void NobugLandingOrigin(int client, float landingOrigin[3])
 		landingOrigin = gF_TraceEndOrigin[client][0];
 		return;
 	}
+
+	// The engine never grounds a player rising this fast, so nothing to extrapolate.
+	if (velocity[2] > NON_JUMP_VELOCITY)
+	{
+		landingOrigin = groundPos;
+		return;
+	}
+
 	// Fallback when no collision happened during TryPlayerMove, or that function was not called.
 	float firstTraceEndpoint[3], scaledVelocity[3];
 	scaledVelocity = velocity;
 	ScaleVector(scaledVelocity, GetTickInterval());
 	AddVectors(origin, scaledVelocity, firstTraceEndpoint);
-	
-	TR_TraceHullFilter(origin, firstTraceEndpoint, mins, maxs, MASK_PLAYERSOLID, TraceEntityFilterPlayers, client);
+
+	// Same hull shape TryPlayerMove would have swept.
+	float hullMins[3], hullMaxs[3];
+	GetClientMins(client, hullMins);
+	GetClientMaxs(client, hullMaxs);
+	TR_TraceHullFilter(origin, firstTraceEndpoint, hullMins, hullMaxs, MASK_PLAYERSOLID, TraceEntityFilterPlayers, client);
 	if (!TR_DidHit())
 	{
 		// It is possible to not hit the trace, if your vertical velocity is low enough.
