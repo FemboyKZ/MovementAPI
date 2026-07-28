@@ -1138,28 +1138,52 @@ static bool BoxPairOrderOK(const float samplePos[3], float seamZ, int lowerBox, 
 
 // Falling past an overhanging box brush while hugging its wall makes the engine report the brush's topside,
 // because cmodel.cpp picks the checked z side from travel direction rather than the side actually crossed.
-// The native covers geometry plus the Ineq 10 velocity window.
+// The overhang finder needs a probe INSIDE the wall's XY column near the crossed edge,
+// which is at HULL TOP height beside a hugging player, so try each cardinal column there.
+// The Ineq 10 window is computed here on the probe's axis, since the native measures vPerp
+// on whichever exposed face it picked, which can be the wrong axis on a corner box.
 static bool CheckTexturebug(int client, const float origin[3], float seamZ)
 {
+	float velZ = gF_Velocity[client][2];
+	if (velZ >= 0.0)
+	{
+		return false;
+	}
 	float hullHeight = gB_Ducking[client] ? BSP_CSGO_HULL_DUCK : BSP_CSGO_HULL_STAND;
-	int boxIdx, face;
-	float wallCoord, bottomZ, height, maxVPerp, vPerp;
-	if (!BSP_BoxBrushOverhangWindow(origin, gF_Velocity[client], hullHeight,
-		boxIdx, face, wallCoord, bottomZ, height, maxVPerp, vPerp))
+
+	float probe[3];
+	for (int d = 0; d < 4; d++)
 	{
-		return false;
+		probe = origin;
+		probe[2] += hullHeight;
+		int axis = d / 2;
+		probe[axis] += (d & 1) ? -(PX_WALL_HALF_WIDTH + 1.0) : (PX_WALL_HALF_WIDTH + 1.0);
+
+		int boxIdx, face;
+		float wallCoord, bottomZ, height;
+		if (!BSP_FindBoxBrushOverhang(probe, boxIdx, face, wallCoord, bottomZ, height))
+		{
+			continue;
+		}
+		// The misreported plane must be this box's own top, else the contact came from elsewhere.
+		if (FloatAbs(bottomZ + height - seamZ) > 0.1)
+		{
+			continue;
+		}
+		float vPerp = FloatAbs(gF_Velocity[client][axis]);
+		float maxVPerp = -velZ * BSP_DIST_EPSILON / (height + hullHeight);
+		if (vPerp >= maxVPerp)
+		{
+			continue;
+		}
+		if (gI_LastTexturebugTick[client] != GetGameTickCount())
+		{
+			gI_LastTexturebugTick[client] = GetGameTickCount();
+			Call_OnPlayerTexturebug(client, gF_Origin[client], gF_Velocity[client]);
+		}
+		return true;
 	}
-	// The misreported plane must be this box's own top, else the contact came from elsewhere.
-	if (FloatAbs(bottomZ + height - seamZ) > 0.1)
-	{
-		return false;
-	}
-	if (gI_LastTexturebugTick[client] != GetGameTickCount())
-	{
-		gI_LastTexturebugTick[client] = GetGameTickCount();
-		Call_OnPlayerTexturebug(client, gF_Origin[client], gF_Velocity[client]);
-	}
-	return true;
+	return false;
 }
 
 // CategorizePosition's grounding trace: full hull 2u down, standable planes only.
