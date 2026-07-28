@@ -108,7 +108,10 @@ forward void Movement_OnStopDucking(int client);
 forward void Movement_OnPlayerJump(int client, bool jumpbug);
 
 /**
- * Called when a player edgebugs
+ * Called when a player edgebugs.
+ * Fires at most once per tick.
+ * A pixelsurf matches the same signature, so a tick detected as a pixelsurf raises
+ * Movement_OnPlayerPixelsurf instead and this forward stays silent.
  * Setting velocity when this is called may not be effective.
  *
  * @param client		Client index.
@@ -119,9 +122,8 @@ forward void Movement_OnPlayerEdgebug(int client, float origin[3], float velocit
 
 /**
  * Called when a player pixelsurfs.
- * A pixelsurf also matches the edgebug signature, so Movement_OnPlayerEdgebug fires on the same tick as well: 
- * A consumer wanting pure edgebugs should ignore any tick that also raised this forward.
- * Called once per tick the player stays suspended on the surf.
+ * Fires at most once per tick, and once per tick the player stays suspended on the surf.
+ * Takes priority over Movement_OnPlayerEdgebug, which is suppressed for that tick.
  * Setting velocity when this is called may not be effective.
  *
  * @param client		Client index.
@@ -538,21 +540,37 @@ native void Movement_SetLandingOrigin(int client, float origin[3]);
 native void Movement_SetLandingVelocity(int client, float velocity[3]);
 
 /**
+ * Largest number of collisions MovementAPI stores per tick.
+ * Movement_GetCollisionCount never returns more than this,
+ * so an index below the reported count is always safe to pass to the accessors below.
+ */
+#define MOVEMENT_MAX_COLLISIONS 4
+
+/**
  * Get the player's number of collisions during movement processing.
  * This function should ideally be called after inside Movement_OnTryPlayerMovePost.
- * 
+ *
+ * The count covers the whole tick, not just the current TryPlayerMove call,
+ * because the engine resets its touch list once per command and StepMove can call TryPlayerMove twice.
+ * It is capped at MOVEMENT_MAX_COLLISIONS.
+ *
+ * Note: the engine records only the first contact with any given entity per tick.
+ * The world is a single entity, so a tick that clips a wall and then a floor reports just the wall.
+ * Do not treat this as a complete list of the tick's surfaces.
+ *
  * @param client     Client index.
- * @return           Number of collisions.
+ * @return           Number of collisions stored, 0 to MOVEMENT_MAX_COLLISIONS.
  */
 native int Movement_GetCollisionCount(int client);
 
 /**
- * Set the player's landing velocity.
+ * Get the start origin of a player's collision during movement processing.
  * This function should ideally be called after inside Movement_OnTryPlayerMovePost.
  *
  * @param client     Client index.
  * @param num		 Collision number, must not exceed Movement_GetCollisionCount's value.
  * @param result	 Resultant vector.
+ * @error            Index out of range or not below the current collision count.
  */
 native void Movement_GetCollisionStartOrigin(int client, int num, float result[3]);
 
@@ -563,6 +581,7 @@ native void Movement_GetCollisionStartOrigin(int client, int num, float result[3
  * @param client     Client index.
  * @param num		 Collision number, must not exceed Movement_GetCollisionCount's value.
  * @param result	 Resultant vector.
+ * @error            Index out of range or not below the current collision count.
  */
 native void Movement_GetCollisionEndOrigin(int client, int num, float result[3]);
 
@@ -573,6 +592,7 @@ native void Movement_GetCollisionEndOrigin(int client, int num, float result[3])
  * @param client     Client index.
  * @param num		 Collision number, must not exceed Movement_GetCollisionCount's value.
  * @param result	 Resultant vector.
+ * @error            Index out of range or not below the current collision count.
  */
 native void Movement_GetCollisionNormal(int client, int num, float result[3]);
 
