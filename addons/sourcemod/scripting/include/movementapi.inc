@@ -598,6 +598,9 @@ native void Movement_SetLandingVelocity(int client, float velocity[3]);
  * Every blocking bump trace of the most recent TryPlayerMove call, in bump order,
  * including repeated contacts with the world (wall then floor reports both).
  * Reset on each TryPlayerMove call, and StepMove can run two per tick.
+ * If the TracePlayerBBox hook is unavailable, falls back to the MoveHelper touch list,
+ * which dedupes by entity, so repeated world contacts collapse into the first one.
+ * Always 0 for bots, their TryPlayerMove calls are not tracked.
  *
  * @param client     Client index.
  * @return           Number of collisions stored, 0 to MOVEMENT_MAX_COLLISIONS.
