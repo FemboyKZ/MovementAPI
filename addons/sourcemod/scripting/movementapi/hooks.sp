@@ -1288,10 +1288,17 @@ static void NobugLandingOrigin(int client, float landingOrigin[3])
 	}
 
 	// Jump is bugged, try to use the trace result of TryPlayerMove if possible.
-	if (gB_TryPlayerMoveThisTick[client] && gI_CollisionCount[client] > 0)
+	// First standable contact only, a wall clipped before the floor would give the wall contact point.
+	if (gB_TryPlayerMoveThisTick[client])
 	{
-		landingOrigin = gF_TraceEndOrigin[client][0];
-		return;
+		for (int i = 0; i < gI_CollisionCount[client]; i++)
+		{
+			if (gF_TraceNormal[client][i][2] >= STANDABLE_NORMAL_Z)
+			{
+				landingOrigin = gF_TraceEndOrigin[client][i];
+				return;
+			}
+		}
 	}
 
 	// The engine never grounds a player rising this fast, so nothing to extrapolate.
