@@ -653,7 +653,9 @@ public MRESReturn DHooks_OnTryPlayerMove_Pre(Address pThis, DHookReturn hReturn,
 	}
 
 	// Seed bump 0 from pFirstTrace so the reuse path isn't a blind spot.
-	if (!DHookIsNullParam(hParams, 2))
+	// A forward that wrote origin/velocity back can break the engine's end == *pFirstDest reuse,
+	// leaving the seed stale if the re-trace is unblocked, so only seed on untouched move data.
+	if (result == Plugin_Continue && !DHookIsNullParam(hParams, 2))
 	{
 		float fraction = DHookGetParamObjectPtrVar(hParams, 2, TRACE_FRACTION, ObjectValueType_Float);
 		bool allsolid = view_as<bool>(DHookGetParamObjectPtrVar(hParams, 2, TRACE_ALLSOLID, ObjectValueType_Bool));
