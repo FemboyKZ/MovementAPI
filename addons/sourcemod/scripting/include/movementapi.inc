@@ -114,6 +114,8 @@ forward void Movement_OnPlayerJump(int client, bool jumpbug);
 
 /**
  * Called when a player edgebugs.
+ * Only flat contact counts, meaning a plane normal z of at least 0.999,
+ * so landing on a slope does not qualify.
  * Setting velocity when this is called may not be effective.
  *
  * @param client		Client index.

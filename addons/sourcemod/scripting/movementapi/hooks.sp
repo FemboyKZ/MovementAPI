@@ -1,4 +1,5 @@
 #define NON_JUMP_VELOCITY     140.0
+#define EDGEBUG_MIN_NORMAL_Z  0.999
 
 static DynamicDetour H_OnPlayerMove;
 static DynamicDetour H_OnDuck;
@@ -742,16 +743,13 @@ public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn
 
 	// Edgebug detection, confirmed in CategorizePosition.
 	// Note: Origin and velocity are not updated yet.
+	// Flat contacts only. A slope can deflect the player upwards fast enough that the engine
+	// refuses to ground them, which is not an edgebug.
 	if (!(GetEntityFlags(client) & FL_ONGROUND) && gF_Velocity[client][2] < 0.0)
 	{
-		static ConVar sv_walkable_normal;
-		if (sv_walkable_normal == INVALID_HANDLE)
-		{
-			sv_walkable_normal = FindConVar("sv_walkable_normal");
-		}
 		for (int i = 0; i < gI_CollisionCount[client]; i++)
 		{
-			if (gF_TraceNormal[client][i][2] > sv_walkable_normal.FloatValue)
+			if (gF_TraceNormal[client][i][2] >= EDGEBUG_MIN_NORMAL_Z)
 			{
 				gB_PendingEdgebug[client] = true;
 				gF_PendingEdgebugOrigin[client] = gF_Origin[client];
