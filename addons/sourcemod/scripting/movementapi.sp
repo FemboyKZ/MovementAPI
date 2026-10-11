@@ -224,12 +224,12 @@ static void ResetClientData(int client)
 	gB_InTryPlayerMove[client] = false;
 	gB_SeededFirstTrace[client] = false;
 	gB_PendingEdgebug[client] = false;
-	gI_PendingEdgebugTick[client] = 0;
+	gI_PendingEdgebugCmdnum[client] = 0;
 	gF_PendingEdgebugOrigin[client] = view_as<float>( { 0.0, 0.0, 0.0 } );
 	gF_PendingEdgebugVelocity[client] = view_as<float>( { 0.0, 0.0, 0.0 } );
-	gI_LastEdgebugTick[client] = 0;
-	gI_LastPixelsurfTick[client] = 0;
-	gI_LastTexturebugTick[client] = 0;
+	gI_LastEdgebugCmdnum[client] = 0;
+	gI_LastPixelsurfCmdnum[client] = 0;
+	gI_LastTexturebugCmdnum[client] = 0;
 }
 
 static void UpdateTurning(int client, const float oldEyeAngles[3], const float eyeAngles[3])

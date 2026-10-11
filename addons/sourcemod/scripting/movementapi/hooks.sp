@@ -67,19 +67,20 @@ float gF_PostAAVelocity[MAXPLAYERS + 1][3];
 bool gB_OldWalkMoved[MAXPLAYERS + 1];
 
 int gI_CollisionCount[MAXPLAYERS + 1];
+static int gI_PreMoveTouchCount[MAXPLAYERS + 1];
 
 float gF_TraceStartOrigin[MAXPLAYERS + 1][MAX_BUMPS][3];
 float gF_TraceEndOrigin[MAXPLAYERS + 1][MAX_BUMPS][3];
 float gF_TraceNormal[MAXPLAYERS + 1][MAX_BUMPS][3];
 
 bool gB_PendingEdgebug[MAXPLAYERS + 1];
-int gI_PendingEdgebugTick[MAXPLAYERS + 1];
+int gI_PendingEdgebugCmdnum[MAXPLAYERS + 1];
 float gF_PendingEdgebugOrigin[MAXPLAYERS + 1][3];
 float gF_PendingEdgebugVelocity[MAXPLAYERS + 1][3];
 
-int gI_LastEdgebugTick[MAXPLAYERS + 1];
-int gI_LastPixelsurfTick[MAXPLAYERS + 1];
-int gI_LastTexturebugTick[MAXPLAYERS + 1];
+int gI_LastEdgebugCmdnum[MAXPLAYERS + 1];
+int gI_LastPixelsurfCmdnum[MAXPLAYERS + 1];
+int gI_LastTexturebugCmdnum[MAXPLAYERS + 1];
 
 bool gB_BSPPeekReady;
 
@@ -552,10 +553,10 @@ public MRESReturn DHooks_OnCategorizePosition_Post(Address pThis)
 
 	if (gB_PendingEdgebug[client])
 	{
-		if (!ground && gI_PendingEdgebugTick[client] == GetGameTickCount()
-			&& gI_LastEdgebugTick[client] != GetGameTickCount())
+		if (!ground && gI_PendingEdgebugCmdnum[client] == gI_Cmdnum[client]
+			&& gI_LastEdgebugCmdnum[client] != gI_Cmdnum[client])
 		{
-			gI_LastEdgebugTick[client] = GetGameTickCount();
+			gI_LastEdgebugCmdnum[client] = gI_Cmdnum[client];
 			Call_OnPlayerEdgebug(client, gF_PendingEdgebugOrigin[client], gF_PendingEdgebugVelocity[client]);
 		}
 		gB_PendingEdgebug[client] = false;
@@ -631,6 +632,7 @@ public MRESReturn DHooks_OnTryPlayerMove_Pre(Address pThis, DHookReturn hReturn,
 		gF_TraceDist[client][i] = 0.0;
 	}
 	gI_CollisionCount[client] = 0;
+	gI_PreMoveTouchCount[client] = GetTouchListCount();
 	gB_InTryPlayerMove[client] = true;
 	gB_SeededFirstTrace[client] = false;
 
@@ -738,11 +740,18 @@ public MRESReturn DHooks_OnTracePlayerBBox_Post(Address pThis, DHookParam hParam
 	return MRES_Ignored;
 }
 
+static int GetTouchListCount()
+{
+	return LoadFromAddress(moveHelperAddr + view_as<Address>(8) + view_as<Address>(12), NumberType_Int32);
+}
+
 // IMoveHelper's touch list, reset once per RunCommand.
 // Dedupes by entity and the world is one entity, so a tick that clips a wall then a floor only reports the wall.
+// Earlier entries are from a previous TryPlayerMove this tick.
 static void ReadTouchListCollisions(int client)
 {
-	int touchCount = LoadFromAddress(moveHelperAddr + view_as<Address>(8) + view_as<Address>(12), NumberType_Int32);
+	int first = gI_PreMoveTouchCount[client];
+	int touchCount = GetTouchListCount() - first;
 	if (touchCount > MAX_BUMPS)
 	{
 		// A CUtlVector with no fixed cap. Clamp before indexing.
@@ -760,7 +769,7 @@ static void ReadTouchListCollisions(int client)
 	Address elements = LoadFromAddress(moveHelperAddr + view_as<Address>(8) + view_as<Address>(16), NumberType_Int32);
 	for (int i = 0; i < touchCount; i++)
 	{
-		Trace trace = Trace(elements + view_as<Address>(i * 96) + view_as<Address>(12));
+		Trace trace = Trace(elements + view_as<Address>((first + i) * 96) + view_as<Address>(12));
 		trace.startpos.ToArray(gF_TraceStartOrigin[client][i]);
 		trace.endpos.ToArray(gF_TraceEndOrigin[client][i]);
 		trace.plane.normal.ToArray(gF_TraceNormal[client][i]);
@@ -784,9 +793,9 @@ public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn
 
 	gB_TryPlayerMoveThisTick[client] = true;
 
-	// Nothing captured means the hook is absent, or its calls were inlined away.
+	// Nothing captured means nothing was hit, the hook is absent, or its calls were inlined away.
 	// The touch list is the pre-hook source: entity-deduped, so repeated world contacts
-	// collapse into one, but it is always populated.
+	// collapse into one, but a first contact is always added.
 	if (gI_CollisionCount[client] == 0)
 	{
 		ReadTouchListCollisions(client);
@@ -858,9 +867,9 @@ public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn
 			if (onSeam)
 			{
 				pixelsurfed = true;
-				if (gI_LastPixelsurfTick[client] != GetGameTickCount())
+				if (gI_LastPixelsurfCmdnum[client] != gI_Cmdnum[client])
 				{
-					gI_LastPixelsurfTick[client] = GetGameTickCount();
+					gI_LastPixelsurfCmdnum[client] = gI_Cmdnum[client];
 					Call_OnPlayerPixelsurf(client, gF_Origin[client], gF_Velocity[client]);
 				}
 			}
@@ -877,7 +886,7 @@ public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn
 		if (startedAirborne && !pixelsurfed && !texturebugged)
 		{
 			gB_PendingEdgebug[client] = true;
-			gI_PendingEdgebugTick[client] = GetGameTickCount();
+			gI_PendingEdgebugCmdnum[client] = gI_Cmdnum[client];
 			gF_PendingEdgebugOrigin[client] = gF_Origin[client];
 			gF_PendingEdgebugVelocity[client] = gF_Velocity[client];
 		}
@@ -1160,7 +1169,8 @@ static bool CheckTexturebug(int client, const float origin[3], float seamZ)
 	{
 		return false;
 	}
-	float hullHeight = gB_Ducking[client] ? BSP_CSGO_HULL_DUCK : BSP_CSGO_HULL_STAND;
+	// gB_Ducking predates this tick's Duck, m_vecMaxs lags until PostThink.
+	float hullHeight = GetEntProp(client, Prop_Send, "m_bDucked") ? BSP_CSGO_HULL_DUCK : BSP_CSGO_HULL_STAND;
 
 	float probe[3];
 	for (int d = 0; d < 4; d++)
@@ -1187,9 +1197,9 @@ static bool CheckTexturebug(int client, const float origin[3], float seamZ)
 		{
 			continue;
 		}
-		if (gI_LastTexturebugTick[client] != GetGameTickCount())
+		if (gI_LastTexturebugCmdnum[client] != gI_Cmdnum[client])
 		{
-			gI_LastTexturebugTick[client] = GetGameTickCount();
+			gI_LastTexturebugCmdnum[client] = gI_Cmdnum[client];
 			Call_OnPlayerTexturebug(client, gF_Origin[client], gF_Velocity[client]);
 		}
 		return true;
