@@ -1,7 +1,7 @@
 /*
 	MovementAPI Plugin Include
 
-	Website: https://github.com/danzayau/MovementAPI
+	Website: https://github.com/FemboyKZ/MovementAPI
 */
 
 #if defined _movementapi_included_
@@ -126,7 +126,7 @@ forward void Movement_OnStopDucking(int client);
 forward void Movement_OnPlayerJump(int client, bool jumpbug);
 
 /**
- * Called when a player edgebugs.
+ * Called when a player edgebugs. Not called for bots.
  * Fires at most once per tick.
  * A pixelsurf or texturebug matches the same signature,
  * so a tick detected as either raises its own forward instead and this one stays silent.
@@ -143,7 +143,7 @@ forward void Movement_OnPlayerJump(int client, bool jumpbug);
 forward void Movement_OnPlayerEdgebug(int client, float origin[3], float velocity[3]);
 
 /**
- * Called when a player pixelsurfs.
+ * Called when a player pixelsurfs. Not called for bots.
  * Fires at most once per tick, and once per tick the player stays suspended on the surf.
  * Takes priority over Movement_OnPlayerEdgebug, which is suppressed for that tick.
  * With the bsppeek extension the seam is verified against the map's brush tables.
@@ -157,7 +157,7 @@ forward void Movement_OnPlayerEdgebug(int client, float origin[3], float velocit
 forward void Movement_OnPlayerPixelsurf(int client, float origin[3], float velocity[3]);
 
 /**
- * Called when a player texturebugs.
+ * Called when a player texturebugs. Not called for bots.
  * Fires at most once per tick and suppresses Movement_OnPlayerEdgebug for that tick.
  * Requires the bsppeek extension. Without it such ticks are reported as edgebugs.
  * Setting velocity when this is called may not be effective.
@@ -345,7 +345,7 @@ forward Action Movement_OnCategorizePositionPre(int client, float origin[3], flo
 forward Action Movement_OnCategorizePositionPost(int client, float origin[3], float velocity[3]);
 
 /**
- * Called before TryPlayerMove movement function is called.
+ * Called before TryPlayerMove movement function is called. Not called for bots.
  * Modifying origin or velocity parameters will change player's origin and velocity accordingly.
  *
  * @param client       Client index.
@@ -356,7 +356,7 @@ forward Action Movement_OnCategorizePositionPost(int client, float origin[3], fl
 forward Action Movement_OnTryPlayerMovePre(int client, float origin[3], float velocity[3]);
 
 /**
- * Called after TryPlayerMove movement function is called.
+ * Called after TryPlayerMove movement function is called. Not called for bots.
  * Modifying origin or velocity parameters will change player's origin and velocity accordingly.
  *
  * @param client       Client index.
@@ -613,7 +613,7 @@ native int Movement_GetCollisionCount(int client);
  * This function should ideally be called after inside Movement_OnTryPlayerMovePost.
  *
  * @param client     Client index.
- * @param num		 Collision number, must not exceed Movement_GetCollisionCount's value.
+ * @param num		 Collision number, must be less than Movement_GetCollisionCount's value.
  * @param result	 Resultant vector.
  * @error            Index out of range or not below the current collision count.
  */
@@ -624,7 +624,7 @@ native void Movement_GetCollisionStartOrigin(int client, int num, float result[3
  * This function should ideally be called after inside Movement_OnTryPlayerMovePost.
  *
  * @param client     Client index.
- * @param num		 Collision number, must not exceed Movement_GetCollisionCount's value.
+ * @param num		 Collision number, must be less than Movement_GetCollisionCount's value.
  * @param result	 Resultant vector.
  * @error            Index out of range or not below the current collision count.
  */
@@ -635,7 +635,7 @@ native void Movement_GetCollisionEndOrigin(int client, int num, float result[3])
  * This function should ideally be called after inside Movement_OnTryPlayerMovePost.
  *
  * @param client     Client index.
- * @param num		 Collision number, must not exceed Movement_GetCollisionCount's value.
+ * @param num		 Collision number, must be less than Movement_GetCollisionCount's value.
  * @param result	 Resultant vector.
  * @error            Index out of range or not below the current collision count.
  */

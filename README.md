@@ -11,7 +11,7 @@ A SourceMod API focused on player movement in the form of a [function stock liba
 
 ## Plugin Installation
 
-- Download and extract `MovementAPI-vX.X.X.zip` from the [latest GitHub release](https://github.com/FemboyKZ/MovementAPI/releases/latest) to `csgo/` in your server directory.
+- Download and extract `movementapi-X.X.X.zip` from the [latest GitHub release](https://github.com/FemboyKZ/MovementAPI/releases/latest) to `csgo/` in your server directory.
 
 ## Terminology
 
