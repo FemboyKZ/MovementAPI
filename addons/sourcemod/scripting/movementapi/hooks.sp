@@ -577,20 +577,25 @@ public MRESReturn DHooks_OnCategorizePosition_Post(Address pThis)
 		else // Takeoff
 		{
 			gF_TakeoffOrigin[client] = gF_OldOrigin[client];
+			bool hadLadderMoveType = Movement_GetMovetype(client) == MOVETYPE_LADDER || gMT_OldMovetype[client] == MOVETYPE_LADDER;
 			// Note: Jumping isn't detected here.
 			if (gB_WalkMoved[client])
 			{
 				gF_TakeoffVelocity[client] = gF_PostWalkMoveVelocity[client];
 			}
-			else
+			else if (hadLadderMoveType)
 			{
 				gF_TakeoffVelocity[client] = gF_PostLadderMoveVelocity[client];
+			}
+			else
+			{
+				// Can run before this tick's LadderMove, where gF_PostLadderMoveVelocity is still last tick's.
+				gF_TakeoffVelocity[client] = gF_Velocity[client];
 			}
 			gI_TakeoffTick[client] = gI_TickCount[client];
 			gI_TakeoffCmdNum[client] = gI_Cmdnum[client];
 			gB_Jumped[client] = false;
 			gB_HitPerf[client] = false;
-			bool hadLadderMoveType = Movement_GetMovetype(client) == MOVETYPE_LADDER || gMT_OldMovetype[client] == MOVETYPE_LADDER;
 			bool ladderJump = hadLadderMoveType && !gB_WalkMoved[client];
 			if (ladderJump)
 			{
@@ -1017,7 +1022,24 @@ static float RefineDispNormalZ(const float contactPos[3], float rawNormalZ)
 	{
 		return normal[2];
 	}
-	return rawNormalZ;
+	// contactPos is the feet centre, which hangs off the surface on an edgebug.
+	// Only the hull bottom's rim overlaps it, so take the rim sample closest to feet height.
+	float bestDiff = 4.0;
+	float bestNormalZ = rawNormalZ;
+	for (int dx = -1; dx <= 1; dx++)
+	{
+		for (int dy = -1; dy <= 1; dy++)
+		{
+			surfZ = BSP_DispSurfaceNormalAt(contactPos[0] + dx * PX_WALL_HALF_WIDTH, contactPos[1] + dy * PX_WALL_HALF_WIDTH, normal);
+			float diff = FloatAbs(surfZ - contactPos[2]);
+			if (surfZ > BSP_DISP_NO_HIT && diff <= bestDiff)
+			{
+				bestDiff = diff;
+				bestNormalZ = normal[2];
+			}
+		}
+	}
+	return bestNormalZ;
 }
 
 // Gate logic ported from fkz-routecalc pixelsurf/bsp.sp.
