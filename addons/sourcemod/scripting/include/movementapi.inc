@@ -369,10 +369,11 @@ forward Action Movement_OnTryPlayerMovePost(int client, float origin[3], float v
 // =====[ NATIVES ]=====
 
 /**
- * Gets whether a player's last takeoff was a jump.
+ * Gets whether a player jumped this tick.
+ * Reset at the start of each tick's movement processing.
  *
  * @param client		Client index.
- * @return				Whether player's last takeoff was a jump.
+ * @return				Whether player jumped this tick.
  */
 native bool Movement_GetJumped(int client);
 

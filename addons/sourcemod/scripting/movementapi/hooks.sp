@@ -104,7 +104,7 @@ void HookGameMovementFunctions()
 	moveHelperAddr = GameConfGetAddress(gH_GameData, "sm_pSingleton");
 	if (!moveHelperAddr)
 	{
-		SetFailState("Failed to find IMoveHelper::sm_pSingleton.");
+		LogError("Failed to find IMoveHelper::sm_pSingleton, the touch list fallback is disabled.");
 	}
 
 	// The instance is needed to hook, so this only resolves the setup here.
@@ -143,7 +143,6 @@ public MRESReturn DHooks_OnDuck_Pre(Address pThis)
 	}
 	Action result = UpdateMoveData(pThis, client, Call_OnDuckPre);
 	
-	gB_Ducking[client] = Movement_GetDucking(client);
 	gB_ProcessingDuck[client] = true;
 
 	if (result != Plugin_Continue)
@@ -164,6 +163,7 @@ public MRESReturn DHooks_OnDuck_Post(Address pThis)
 		return MRES_Ignored;
 	}
 	
+	gB_Ducking[client] = Movement_GetDucking(client);
 	if (gB_Ducking[client] && !gB_OldDucking[client])
 	{
 		Call_OnStartDucking(client);
@@ -742,6 +742,10 @@ public MRESReturn DHooks_OnTracePlayerBBox_Post(Address pThis, DHookParam hParam
 
 static int GetTouchListCount()
 {
+	if (!moveHelperAddr)
+	{
+		return 0;
+	}
 	return LoadFromAddress(moveHelperAddr + view_as<Address>(8) + view_as<Address>(12), NumberType_Int32);
 }
 
