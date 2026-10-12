@@ -17,7 +17,7 @@ public Plugin myinfo =
 	name = "MovementAPI", 
 	author = "DanZay, FKZ Fork", 
 	description = "Provides API focused on player movement", 
-	version = "2.5.1",
+	version = "2.5.2",
 	url = "https://github.com/FemboyKZ/MovementAPI"
 };
 
