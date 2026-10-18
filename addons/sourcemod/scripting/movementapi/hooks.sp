@@ -230,6 +230,7 @@ public MRESReturn DHooks_OnLadderMove_Post(Address pThis, DHookReturn hReturn)
 		gI_TakeoffCmdNum[client] = gI_Cmdnum[client];
 		gB_Jumped[client] = false;
 		gB_HitPerf[client] = false;
+		// Engine refreshes m_vecLadderNormal every laddering tick before any dismount branch.
 		GetEntPropVector(client, Prop_Send, "m_vecLadderNormal", gF_TakeoffLadderNormal[client]);
 		Call_OnChangeMovetype(client, MOVETYPE_LADDER, MOVETYPE_WALK);
 	}
@@ -249,7 +250,9 @@ public MRESReturn DHooks_OnLadderMove_Post(Address pThis, DHookReturn hReturn)
 	else if (returnValue && gMT_OldMovetype[client] == MOVETYPE_LADDER
 		&& Movement_GetMovetype(client) == MOVETYPE_WALK)
 	{
-		// Jumping away from the ladder.
+		// Jumping away from the ladder. The movetype switch is the engine's own verdict,
+		// its LadderMove IN_JUMP branch already set movetype and velocity (ladderNormal * 270),
+		// so no need to re-derive the button and m_ignoreLadderJumpTime condition here.
 		gF_TakeoffVelocity[client] = gF_PostLadderMoveVelocity[client];
 		gF_TakeoffOrigin[client] = gF_PostLadderMoveOrigin[client];
 		gI_TakeoffTick[client] = gI_TickCount[client];
@@ -682,6 +685,7 @@ static bool VectorsNearEqual(const float a[3], const float b[3])
 	return FloatAbs(a[0] - b[0]) < 0.001 && FloatAbs(a[1] - b[1]) < 0.001 && FloatAbs(a[2] - b[2]) < 0.001;
 }
 
+// Records every blocking bump trace of the current TryPlayerMove call.
 public MRESReturn DHooks_OnTracePlayerBBox_Post(Address pThis, DHookParam hParams)
 {
 	int client = GetClientFromGameMovementAddress(pThis);
@@ -1226,6 +1230,9 @@ static float GetStandableNormalZ()
 	return sv_standable_normal.FloatValue;
 }
 
+// CategorizePosition's grounding trace: full hull 2u down, standable planes only.
+// A steep hit retries the corner sub-boxes (TracePlayerBBoxForGround),
+// but groundPos stays the main trace endpos, which is the engine's overwriteEndpos behavior.
 static bool TraceGroundParity(int client, const float origin[3], float groundPos[3])
 {
 	float standableZ = GetStandableNormalZ();
@@ -1347,6 +1354,7 @@ static void NobugLandingOrigin(int client, float landingOrigin[3])
 	ScaleVector(scaledVelocity, GetTickInterval());
 	AddVectors(origin, scaledVelocity, firstTraceEndpoint);
 
+	// Foot-level plate, not the full hull.
 	float mins[3] = {-16.0, -16.0, 0.0};
 	float maxs[3] = {16.0, 16.0, 0.0};
 	TR_TraceHullFilter(origin, firstTraceEndpoint, mins, maxs, MASK_PLAYERSOLID, TraceEntityFilterPlayers, client);

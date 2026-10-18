@@ -433,6 +433,7 @@ native int Movement_GetTakeoffCmdNum(int client);
 
 /**
  * Gets the plane normal of the ladder the player last took off from.
+ * The engine pushes a ladder jump along this normal at 270 u/s.
  *
  * @param client		Client index.
  * @param result		Ladder normal, zero vector if the last takeoff was not from a ladder.
@@ -585,6 +586,10 @@ native void Movement_SetLandingOrigin(int client, float origin[3]);
  */
 native void Movement_SetLandingVelocity(int client, float velocity[3]);
 
+/**
+ * Largest number of collisions MovementAPI stores per tick.
+ * An index below the reported count is always safe to pass to the accessors below.
+ */
 #define MOVEMENT_MAX_COLLISIONS 4
 
 /**
