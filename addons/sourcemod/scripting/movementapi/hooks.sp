@@ -1182,6 +1182,11 @@ static bool CheckTexturebug(int client, const float origin[3], float seamZ)
 	{
 		return false;
 	}
+	// A real hit on an upward plane starts above it, only the misreport comes from below.
+	if (origin[2] > seamZ - 0.001)
+	{
+		return false;
+	}
 	// gB_Ducking predates this tick's Duck, m_vecMaxs lags until PostThink.
 	float hullHeight = GetEntProp(client, Prop_Send, "m_bDucked") ? BSP_CSGO_HULL_DUCK : BSP_CSGO_HULL_STAND;
 
