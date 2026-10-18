@@ -1,4 +1,14 @@
 #define NON_JUMP_VELOCITY     140.0
+#define DISP_REFINE_MIN_NORMAL_Z 0.99
+
+#define PX_TOP_NORMAL_Z       0.999
+#define PX_WALL_PROBE_DIST    40.0
+#define PX_WALL_DIRS          8
+#define PX_WALL_NORMAL_Z      0.3
+#define PX_WALL_HALF_WIDTH    16.0
+#define PX_WALL_PRESS_MARGIN  2.0
+#define PX_FLOOR_PROBE_DROP   2.0
+#define PX_FLOOR_PROBE_TOL    4.0
 
 static DynamicDetour H_OnPlayerMove;
 static DynamicDetour H_OnDuck;
@@ -20,12 +30,14 @@ static bool gB_TryPlayerMoveThisTick[MAXPLAYERS + 1];
 #define TRACE_STARTPOS   0
 #define TRACE_ENDPOS     12
 #define TRACE_NORMAL     24
+#define TRACE_DIST       36
 #define TRACE_FRACTION   44
 #define TRACE_ALLSOLID   54
 
 static bool gB_InTryPlayerMove[MAXPLAYERS + 1];
 static bool gB_SeededFirstTrace[MAXPLAYERS + 1];
 static float gF_SeedFirstDest[MAXPLAYERS + 1][3];
+static float gF_TraceDist[MAXPLAYERS + 1][MAX_BUMPS];
 
 static bool gB_PendingEdgebug[MAXPLAYERS + 1];
 static float gF_PendingEdgebugOrigin[MAXPLAYERS + 1][3];
@@ -63,6 +75,18 @@ float gF_TraceStartOrigin[MAXPLAYERS + 1][MAX_BUMPS][3];
 float gF_TraceEndOrigin[MAXPLAYERS + 1][MAX_BUMPS][3];
 float gF_TraceNormal[MAXPLAYERS + 1][MAX_BUMPS][3];
 
+int gI_PendingEdgebugCmdnum[MAXPLAYERS + 1];
+int gI_LastEdgebugCmdnum[MAXPLAYERS + 1];
+int gI_LastPixelsurfCmdnum[MAXPLAYERS + 1];
+int gI_LastTexturebugCmdnum[MAXPLAYERS + 1];
+
+bool gB_BSPPeekReady;
+
+void UpdateBSPPeekStatus()
+{
+	gB_BSPPeekReady = BSPPeek_Available() && (BSP_SelfTest() & 0x03) == 0x03;
+}
+
 void HookGameMovementFunctions()
 {
 	HookGameMovementFunction(H_OnDuck, "CCSGameMovement::Duck", DHooks_OnDuck_Pre, DHooks_OnDuck_Post);
@@ -74,7 +98,7 @@ void HookGameMovementFunctions()
 	HookGameMovementFunction(H_OnPlayerMove, "CCSGameMovement::PlayerMove", DHooks_OnPlayerMove_Pre, DHooks_OnPlayerMove_Post);
 	HookGameMovementFunction(H_OnCategorizePosition, "CGameMovement::CategorizePosition", DHooks_OnCategorizePosition_Pre, DHooks_OnCategorizePosition_Post);
 	HookGameMovementFunction(H_OnTryPlayerMove, "CGameMovement::TryPlayerMove", DHooks_OnTryPlayerMove_Pre, DHooks_OnTryPlayerMove_Post);
-	
+
 	moveHelperAddr = GameConfGetAddress(gH_GameData, "sm_pSingleton");
 	if (!moveHelperAddr)
 	{
@@ -522,11 +546,13 @@ public MRESReturn DHooks_OnCategorizePosition_Post(Address pThis)
 
 	if (gB_PendingEdgebug[client])
 	{
-		gB_PendingEdgebug[client] = false;
-		if (!ground)
+		if (!ground && gI_PendingEdgebugCmdnum[client] == gI_Cmdnum[client]
+			&& gI_LastEdgebugCmdnum[client] != gI_Cmdnum[client])
 		{
+			gI_LastEdgebugCmdnum[client] = gI_Cmdnum[client];
 			Call_OnPlayerEdgebug(client, gF_PendingEdgebugOrigin[client], gF_PendingEdgebugVelocity[client]);
 		}
+		gB_PendingEdgebug[client] = false;
 	}
 
 	// Ground state changed!
@@ -595,12 +621,13 @@ public MRESReturn DHooks_OnTryPlayerMove_Pre(Address pThis, DHookReturn hReturn,
 		return MRES_Ignored;
 	}
 	Action result = UpdateMoveData(pThis, client, Call_OnTryPlayerMovePre);
-	
+
 	for (int i = 0; i < MAX_BUMPS; i++)
 	{
 		gF_TraceStartOrigin[client][i] = NULL_VECTOR;
 		gF_TraceEndOrigin[client][i] = NULL_VECTOR;
 		gF_TraceNormal[client][i] = NULL_VECTOR;
+		gF_TraceDist[client][i] = 0.0;
 	}
 	gI_CollisionCount[client] = 0;
 	gI_PreMoveTouchCount[client] = GetTouchListCount();
@@ -633,6 +660,7 @@ public MRESReturn DHooks_OnTryPlayerMove_Pre(Address pThis, DHookReturn hReturn,
 			DHookGetParamObjectPtrVarVector(hParams, 2, TRACE_STARTPOS, ObjectValueType_Vector, gF_TraceStartOrigin[client][0]);
 			DHookGetParamObjectPtrVarVector(hParams, 2, TRACE_ENDPOS, ObjectValueType_Vector, gF_TraceEndOrigin[client][0]);
 			DHookGetParamObjectPtrVarVector(hParams, 2, TRACE_NORMAL, ObjectValueType_Vector, gF_TraceNormal[client][0]);
+			gF_TraceDist[client][0] = DHookGetParamObjectPtrVar(hParams, 2, TRACE_DIST, ObjectValueType_Float);
 			gI_CollisionCount[client] = 1;
 			gB_SeededFirstTrace[client] = true;
 			DHookGetParamVector(hParams, 1, gF_SeedFirstDest[client]);
@@ -697,6 +725,7 @@ public MRESReturn DHooks_OnTracePlayerBBox_Post(Address pThis, DHookParam hParam
 	DHookGetParamObjectPtrVarVector(hParams, 5, TRACE_STARTPOS, ObjectValueType_Vector, gF_TraceStartOrigin[client][idx]);
 	DHookGetParamObjectPtrVarVector(hParams, 5, TRACE_ENDPOS, ObjectValueType_Vector, gF_TraceEndOrigin[client][idx]);
 	DHookGetParamObjectPtrVarVector(hParams, 5, TRACE_NORMAL, ObjectValueType_Vector, gF_TraceNormal[client][idx]);
+	gF_TraceDist[client][idx] = DHookGetParamObjectPtrVar(hParams, 5, TRACE_DIST, ObjectValueType_Float);
 	if (idx == gI_CollisionCount[client])
 	{
 		gI_CollisionCount[client] = idx + 1;
@@ -738,6 +767,7 @@ static void ReadTouchListCollisions(int client)
 		trace.startpos.ToArray(gF_TraceStartOrigin[client][i]);
 		trace.endpos.ToArray(gF_TraceEndOrigin[client][i]);
 		trace.plane.normal.ToArray(gF_TraceNormal[client][i]);
+		gF_TraceDist[client][i] = trace.plane.dist;
 	}
 	gI_CollisionCount[client] = touchCount;
 }
@@ -763,24 +793,94 @@ public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn
 		ReadTouchListCollisions(client);
 	}
 
-	// Edgebug detection, confirmed in CategorizePosition.
-	// Note: Origin and velocity are not updated yet.
-	if (!(GetEntityFlags(client) & FL_ONGROUND) && gF_Velocity[client][2] < 0.0)
+	// bestNormalZ drives detection and may be disp-refined.
+	// PxSeamVerdict gets the raw plane values, since plane dist is only a world height for a truly axial plane.
+	float bestNormalZ = 0.0;
+	float bestRawNormalZ = 0.0;
+	float seamZ = 0.0;
+	for (int i = 0; i < gI_CollisionCount[client]; i++)
 	{
-		static ConVar sv_walkable_normal;
-		if (sv_walkable_normal == INVALID_HANDLE)
+		float rawNormalZ = gF_TraceNormal[client][i][2];
+		float normalZ = rawNormalZ;
+		// Hull normals are coarse at displacement seams. Check the mesh's true tri normal.
+		if (gB_BSPPeekReady && rawNormalZ >= DISP_REFINE_MIN_NORMAL_Z && rawNormalZ < PX_TOP_NORMAL_Z)
 		{
-			sv_walkable_normal = FindConVar("sv_walkable_normal");
+			normalZ = RefineDispNormalZ(gF_TraceEndOrigin[client][i], rawNormalZ);
 		}
-		for (int i = 0; i < gI_CollisionCount[client]; i++)
+		if (normalZ > bestNormalZ)
 		{
-			if (gF_TraceNormal[client][i][2] > sv_walkable_normal.FloatValue)
+			bestNormalZ = normalZ;
+			bestRawNormalZ = rawNormalZ;
+			seamZ = gF_TraceDist[client][i];
+		}
+	}
+
+	// An edgebug requires the player to start the tick airborne.
+	// Walking on ground keeps FL_ONGROUND set, so it never qualifies.
+	bool startedAirborne = (GetEntityFlags(client) & FL_ONGROUND) == 0;
+
+	// Edgebug / pixelsurf detection.
+	// PX_TOP_NORMAL_Z is deliberately far stricter than the engine's 0.7 standable cutoff:
+	// an edgebug is a flat-floor clip that zeroes vertical velocity mid-tick, so a plain slope contact must not qualify.
+	if (bestNormalZ >= PX_TOP_NORMAL_Z)
+	{
+		float currentOrigin[3], groundEndPoint[3];
+
+		GameMove_GetOrigin(pThis, currentOrigin);
+		float mins[3] = {-16.0, -16.0, 0.0};
+		float maxs[3] = {16.0, 16.0, 0.0};
+
+		groundEndPoint = currentOrigin;
+		groundEndPoint[2] -= 2.0;
+		TR_TraceHullFilter(currentOrigin, groundEndPoint, mins, maxs, MASK_PLAYERSOLID, TraceEntityFilterPlayers, client);
+		bool noGroundUnderfoot = !TR_DidHit();
+
+		// Pixelsurf takes priority over an edgebug this tick.
+		bool pixelsurfed = false;
+		if (noGroundUnderfoot)
+		{
+			// 1 surfable, 0 dead seam, -1 unresolved. Only -1 falls back to the ray probes.
+			int bspVerdict = -1;
+			if (gB_BSPPeekReady)
 			{
-				gB_PendingEdgebug[client] = true;
-				gF_PendingEdgebugOrigin[client] = gF_Origin[client];
-				gF_PendingEdgebugVelocity[client] = gF_Velocity[client];
-				break;
+				bspVerdict = PxSeamVerdict(currentOrigin, seamZ, bestRawNormalZ);
 			}
+			bool onSeam;
+			if (bspVerdict >= 0)
+			{
+				onSeam = bspVerdict == 1;
+			}
+			else
+			{
+				float wallPos[3], wallNorm[3];
+				onSeam = GetPressedWall(client, currentOrigin, wallPos, wallNorm)
+					&& !FloorProtrudesFromWall(client, wallPos, wallNorm, currentOrigin[2]);
+			}
+			if (onSeam)
+			{
+				pixelsurfed = true;
+				if (gI_LastPixelsurfCmdnum[client] != gI_Cmdnum[client])
+				{
+					gI_LastPixelsurfCmdnum[client] = gI_Cmdnum[client];
+					Call_OnPlayerPixelsurf(client, gF_Origin[client], gF_Velocity[client]);
+				}
+			}
+		}
+
+		// Reports the same flat topside plane, but from near the brush's bottom.
+		// Without bsppeek these ticks fall through to the edgebug path.
+		bool texturebugged = false;
+		if (!pixelsurfed && gB_BSPPeekReady)
+		{
+			texturebugged = CheckTexturebug(client, gF_Origin[client], seamZ);
+		}
+
+		if (startedAirborne && !pixelsurfed && !texturebugged)
+		{
+			gB_PendingEdgebug[client] = true;
+			gI_PendingEdgebugCmdnum[client] = gI_Cmdnum[client];
+			gF_PendingEdgebugOrigin[client] = gF_Origin[client];
+			gF_PendingEdgebugVelocity[client] = gF_Velocity[client];
 		}
 	}
 
@@ -793,6 +893,327 @@ public MRESReturn DHooks_OnTryPlayerMove_Post(Address pThis, DHookReturn hReturn
 	{
 		return MRES_Ignored;
 	}
+}
+
+// Pixelsurf 1/2: is the player pressed flush against a wall, and if so which one?
+static bool GetPressedWall(int client, const float origin[3], float wallPos[3], float wallNorm[3])
+{
+	float heights[2];
+	heights[0] = 18.0;
+	heights[1] = 40.0;
+
+	for (int h = 0; h < sizeof(heights); h++)
+	{
+		float start[3];
+		start = origin;
+		start[2] += heights[h];
+
+		for (int d = 0; d < PX_WALL_DIRS; d++)
+		{
+			float yaw = DegToRad(d * (360.0 / PX_WALL_DIRS));
+			float dir[3];
+			dir[0] = Cosine(yaw);
+			dir[1] = Sine(yaw);
+
+			float end[3];
+			end[0] = start[0] + dir[0] * PX_WALL_PROBE_DIST;
+			end[1] = start[1] + dir[1] * PX_WALL_PROBE_DIST;
+			end[2] = start[2];
+
+			TR_TraceRayFilter(start, end, MASK_PLAYERSOLID, RayType_EndPoint, TraceEntityFilterPlayers, client);
+			if (!TR_DidHit())
+			{
+				continue;
+			}
+
+			float normal[3];
+			TR_GetPlaneNormal(null, normal);
+			if (FloatAbs(normal[2]) >= PX_WALL_NORMAL_Z)
+			{
+				continue;
+			}
+
+			float hitPos[3];
+			TR_GetEndPosition(hitPos);
+			float perp = FloatAbs((start[0] - hitPos[0]) * normal[0] + (start[1] - hitPos[1]) * normal[1]);
+			float support = PX_WALL_HALF_WIDTH * (FloatAbs(normal[0]) + FloatAbs(normal[1]));
+			if (perp <= support + PX_WALL_PRESS_MARGIN)
+			{
+				wallPos = hitPos;
+				wallNorm = normal;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+// Pixelsurf 2/2: does a real, walkable floor protrude from the wall at the catch height?
+static bool FloorProtrudesFromWall(int client, const float wallPos[3], const float wallNorm[3], float catchZ)
+{
+	float outs[2];
+	outs[0] = 4.0;
+	outs[1] = 8.0;
+
+	for (int i = 0; i < sizeof(outs); i++)
+	{
+		float start[3];
+		start[0] = wallPos[0] + wallNorm[0] * outs[i];
+		start[1] = wallPos[1] + wallNorm[1] * outs[i];
+		start[2] = catchZ + PX_FLOOR_PROBE_DROP;
+
+		float end[3];
+		end[0] = start[0];
+		end[1] = start[1];
+		end[2] = catchZ - PX_FLOOR_PROBE_DROP;
+
+		TR_TraceRayFilter(start, end, MASK_PLAYERSOLID, RayType_EndPoint, TraceEntityFilterPlayers, client);
+		if (!TR_DidHit())
+		{
+			continue;
+		}
+
+		float normal[3];
+		TR_GetPlaneNormal(null, normal);
+		if (normal[2] < PX_TOP_NORMAL_Z)
+		{
+			continue;
+		}
+
+		float hitPos[3];
+		TR_GetEndPosition(hitPos);
+		if (FloatAbs(hitPos[2] - catchZ) <= PX_FLOOR_PROBE_TOL)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+// True tri normal z of the disp collision mesh at a contact, rawNormalZ if no disp there.
+// XY surface query first (picks the tread, not a seam riser), nearest-tri as fallback.
+static float RefineDispNormalZ(const float contactPos[3], float rawNormalZ)
+{
+	float normal[3];
+	float surfZ = BSP_DispSurfaceNormalAt(contactPos[0], contactPos[1], normal);
+	if (surfZ > BSP_DISP_NO_HIT && FloatAbs(surfZ - contactPos[2]) <= 4.0)
+	{
+		return normal[2];
+	}
+	float v0[3], v1[3], v2[3];
+	if (BSP_DispNearestTri(contactPos, 4.0, normal, v0, v1, v2) > BSP_DISP_NO_HIT)
+	{
+		return normal[2];
+	}
+	// contactPos is the feet centre, which hangs off the surface on an edgebug.
+	// Only the hull bottom's rim overlaps it, so take the rim sample closest to feet height.
+	float bestDiff = 4.0;
+	float bestNormalZ = rawNormalZ;
+	for (int dx = -1; dx <= 1; dx++)
+	{
+		for (int dy = -1; dy <= 1; dy++)
+		{
+			surfZ = BSP_DispSurfaceNormalAt(contactPos[0] + dx * PX_WALL_HALF_WIDTH, contactPos[1] + dy * PX_WALL_HALF_WIDTH, normal);
+			float diff = FloatAbs(surfZ - contactPos[2]);
+			if (surfZ > BSP_DISP_NO_HIT && diff <= bestDiff)
+			{
+				bestDiff = diff;
+				bestNormalZ = normal[2];
+			}
+		}
+	}
+	return bestNormalZ;
+}
+
+// Gate logic ported from fkz-routecalc pixelsurf/bsp.sp.
+// Wall direction is unknown here, so every cardinal column around the hull is tried.
+// Returns 1 surfable, 0 dead seam, -1 unresolved.
+static int PxSeamVerdict(const float origin[3], float seamZ, float contactNormalZ)
+{
+	// plane.dist is only a world height on a truly axial plane.
+	// A tilted 0.999 contact (displacement) makes seamZ meaningless.
+	if (contactNormalZ < 0.9999)
+	{
+		return -1;
+	}
+
+	// The engine stops the player DIST_EPSILON short of the clipped plane.
+	// Also rules out texturebugs, which report the same plane from far below its top.
+	float heightAboveSeam = origin[2] - seamZ;
+	if (heightAboveSeam < -0.001 || heightAboveSeam > BSP_DIST_EPSILON + 0.001)
+	{
+		return 0;
+	}
+
+	// The seam finders match brushes whose XY footprint contains the probe,
+	// so probe just past the hull face to land inside the wall column.
+	bool anyDead = false;
+	float probe[3];
+	for (int d = 0; d < 4; d++)
+	{
+		probe = origin;
+		switch (d)
+		{
+			case 0: probe[0] += PX_WALL_HALF_WIDTH + 1.0;
+			case 1: probe[0] -= PX_WALL_HALF_WIDTH + 1.0;
+			case 2: probe[1] += PX_WALL_HALF_WIDTH + 1.0;
+			case 3: probe[1] -= PX_WALL_HALF_WIDTH + 1.0;
+		}
+		probe[2] = seamZ;
+
+		int verdict = PxSeamVerdictAt(probe, seamZ);
+		if (verdict == 1)
+		{
+			return 1;
+		}
+		if (verdict == 0)
+		{
+			anyDead = true;
+		}
+	}
+	return anyDead ? 0 : -1;
+}
+
+// One wall column. Rejects need a confirmed-bad signal, anything unclear is -1.
+static int PxSeamVerdictAt(const float samplePos[3], float seamZ)
+{
+	// CSGO box-optimized walls live in the cboxbrush table, invisible to the cbrush finder below.
+	int lowerBox, upperBox;
+	if (BSP_FindBoxBrushPairAtSeam(samplePos, seamZ, lowerBox, upperBox))
+	{
+		int lowerContents = BSP_BoxBrushContents(lowerBox);
+		int upperContents = BSP_BoxBrushContents(upperBox);
+		if ((lowerContents & BSPP_MASK_PLAYERCOLLIDE) == 0
+			|| (upperContents & BSPP_MASK_PLAYERCOLLIDE) == 0)
+		{
+			return 0;
+		}
+		// The lower box's top only wins the fraction-0 stalemate if tested first.
+		// Clip pairs surf regardless of order.
+		int clipMask = BSPP_CONTENTS_PLAYERCLIP | BSPP_CONTENTS_MONSTERCLIP;
+		if ((lowerContents & clipMask) == 0 && (upperContents & clipMask) == 0
+			&& !BoxPairOrderOK(samplePos, seamZ, lowerBox, upperBox))
+		{
+			return 0;
+		}
+		return 1;
+	}
+
+	// Only true when both brushes share the seam leaf and the lower is listed first.
+	int lower, upper, leaf, lowerPos, upperPos;
+	if (BSP_LeafBrushPairAtSeam(samplePos, seamZ, lower, upper, leaf, lowerPos, upperPos))
+	{
+		if ((BSP_BrushContents(lower) & BSPP_MASK_PLAYERCOLLIDE) == 0)
+		{
+			return 0;
+		}
+		return 1;
+	}
+
+	// Gate failed, but it fills every out-param anyway, so reject on the confirmed-bad signals.
+	// Unresolved cases stay -1: brush-entity walls, leaf-boundary flush pairs, displacements.
+	if (lower >= 0 && upper >= 0)
+	{
+		if ((BSP_BrushContents(lower) & BSPP_MASK_PLAYERCOLLIDE) == 0)
+		{
+			return 0;
+		}
+		if (leaf >= 0 && lowerPos >= 0 && upperPos >= 0 && lowerPos >= upperPos)
+		{
+			return 0;
+		}
+	}
+	return -1;
+}
+
+// Visit order is the leaf brush LIST position.
+// The box-TABLE index is a vbsp slot, comparing those false-rejects real surfs.
+// A box-optimized cbrush has rawNumSides 0xFFFF and firstSide repurposed as its box index.
+// Only a confirmed out-of-order pair returns false.
+static bool BoxPairOrderOK(const float samplePos[3], float seamZ, int lowerBox, int upperBox)
+{
+	float leafSample[3];
+	leafSample = samplePos;
+	leafSample[2] = seamZ - 0.5;
+	int leaf = BSP_LeafAtPoint(leafSample);
+	if (leaf < 0)
+	{
+		return true;
+	}
+
+	int brushes[128];
+	int count = BSP_LeafBrushes(leaf, brushes, sizeof(brushes));
+	int lowerPos = -1;
+	int upperPos = -1;
+	for (int i = 0; i < count; i++)
+	{
+		int rawNumSides, rawFirstSide, rawContents;
+		BSP_BrushRaw(brushes[i], rawNumSides, rawFirstSide, rawContents);
+		if (rawNumSides != 0xFFFF)
+		{
+			continue;
+		}
+		if (rawFirstSide == lowerBox && lowerPos < 0)
+		{
+			lowerPos = i;
+		}
+		if (rawFirstSide == upperBox && upperPos < 0)
+		{
+			upperPos = i;
+		}
+	}
+	return !(lowerPos >= 0 && upperPos >= 0 && lowerPos > upperPos);
+}
+
+// Falling past an overhanging box brush while hugging its wall makes the engine report the brush's topside,
+// because cmodel.cpp picks the checked z side from travel direction rather than the side actually crossed.
+// The overhang finder needs a probe INSIDE the wall's XY column near the crossed edge,
+// which is at HULL TOP height beside a hugging player, so try each cardinal column there.
+// The Ineq 10 window is computed here on the probe's axis, since the native measures vPerp
+// on whichever exposed face it picked, which can be the wrong axis on a corner box.
+static bool CheckTexturebug(int client, const float origin[3], float seamZ)
+{
+	float velZ = gF_Velocity[client][2];
+	if (velZ >= 0.0)
+	{
+		return false;
+	}
+	// gB_Ducking predates this tick's Duck, m_vecMaxs lags until PostThink.
+	float hullHeight = GetEntProp(client, Prop_Send, "m_bDucked") ? BSP_CSGO_HULL_DUCK : BSP_CSGO_HULL_STAND;
+
+	float probe[3];
+	for (int d = 0; d < 4; d++)
+	{
+		probe = origin;
+		probe[2] += hullHeight;
+		int axis = d / 2;
+		probe[axis] += (d & 1) ? -(PX_WALL_HALF_WIDTH + 1.0) : (PX_WALL_HALF_WIDTH + 1.0);
+
+		int boxIdx, face;
+		float wallCoord, bottomZ, height;
+		if (!BSP_FindBoxBrushOverhang(probe, boxIdx, face, wallCoord, bottomZ, height))
+		{
+			continue;
+		}
+		// The misreported plane must be this box's own top, else the contact came from elsewhere.
+		if (FloatAbs(bottomZ + height - seamZ) > 0.1)
+		{
+			continue;
+		}
+		float vPerp = FloatAbs(gF_Velocity[client][axis]);
+		float maxVPerp = -velZ * BSP_DIST_EPSILON / (height + hullHeight);
+		if (vPerp >= maxVPerp)
+		{
+			continue;
+		}
+		if (gI_LastTexturebugCmdnum[client] != gI_Cmdnum[client])
+		{
+			gI_LastTexturebugCmdnum[client] = gI_Cmdnum[client];
+			Call_OnPlayerTexturebug(client, gF_Origin[client], gF_Velocity[client]);
+		}
+		return true;
+	}
+	return false;
 }
 
 static float GetStandableNormalZ()

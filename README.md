@@ -7,6 +7,7 @@ A SourceMod API focused on player movement in the form of a [function stock libr
 ## Requirements
 
 - SourceMod ^1.11
+- (Optional*) [BSPPeek](https://github.com/jvnipers/bsp-peek)
 
 ## Plugin Installation
 
@@ -19,7 +20,9 @@ A SourceMod API focused on player movement in the form of a [function stock libr
 - **Perfect Bunnyhop (Perf)** - When the player has jumped in the tick after landing and keeps their speed.
 - **Duckbug/Crouchbug** - When the player successfully lands due to uncrouching from mid air and not by falling down. This causes no stamina loss or fall damage upon landing.
 - **Jumpbug** - This is achieved by duckbugging and jumping at the same time. The player is never seen as 'on ground' when bunnyhopping from a tick by tick perspective. A jumpbug inherits the same behavior as a duckbug/crouchbug, along with its effects such as maintaining speed due to no stamina loss.
-- **Edgebug** - When the player lands on the edge of a block and slides off it within the same tick. The floor contact removes their downward velocity, but they stay airborne, keeping their speed and taking no fall damage.
+- **Edgebug** - When the player hits the very edge of a block and slides off it within the same tick, before the ground check runs. The flat contact zeroes their vertical velocity, but they start and end the tick airborne, keeping horizontal speed and taking no fall damage.
+- **Pixelsurf** - When the player stays suspended on the seam between two flush wall brushes. The engine keeps clipping them against the invisible top plane of the lower brush each tick, letting them hang on the wall and slide along it with no floor beneath. Requires being within 0.03125 units above the seam while pressed against the wall.
+- **Texturebug** - When the player falls past the open underside of an overhanging brush while hugging its wall. The engine briefly clips them against the brush's top plane instead of the side they actually crossed, zeroing vertical velocity mid-air for that tick.
 - **Distbug** - Landing behavior varies depending on whether the player lands close to the edge of a block or not:
   1. If the player lands close to the edge of a block, this causes the jump duration to be one tick longer and the player can "slide" on the ground during the landing tick, using the position post-tick as landing position becomes inaccurate.
   2. On the other hand, if the player does not land close to the edge, the player will be considered on the ground one tick earlier, using this position as landing position is not accurate as the player has yet to be fully on the ground.

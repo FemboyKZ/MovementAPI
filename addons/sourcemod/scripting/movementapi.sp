@@ -5,6 +5,8 @@
 
 #include <movement>
 
+#include <bsppeek>
+
 #pragma newdecls required
 #pragma semicolon 1
 
@@ -80,6 +82,32 @@ void HookEvents()
 {
 	PrepSDKCalls();
 	HookGameMovementFunctions();
+}
+
+public void OnAllPluginsLoaded()
+{
+	UpdateBSPPeekStatus();
+}
+
+public void OnMapStart()
+{
+	UpdateBSPPeekStatus();
+}
+
+public void OnLibraryAdded(const char[] name)
+{
+	if (StrEqual(name, "bsppeek"))
+	{
+		UpdateBSPPeekStatus();
+	}
+}
+
+public void OnLibraryRemoved(const char[] name)
+{
+	if (StrEqual(name, "bsppeek"))
+	{
+		gB_BSPPeekReady = false;
+	}
 }
 
 public void OnClientPutInServer(int client)
@@ -197,6 +225,10 @@ static void ResetClientData(int client)
 	gB_OldWalkMoved[client] = false;
 
 	gI_CollisionCount[client] = 0;
+	gI_PendingEdgebugCmdnum[client] = 0;
+	gI_LastEdgebugCmdnum[client] = 0;
+	gI_LastPixelsurfCmdnum[client] = 0;
+	gI_LastTexturebugCmdnum[client] = 0;
 }
 
 static void UpdateTurning(int client, const float oldEyeAngles[3], const float eyeAngles[3])

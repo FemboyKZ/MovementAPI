@@ -37,9 +37,21 @@
 	speed due to no stamina loss.
 
 	Edgebug
-	When the player lands on the edge of a block and slides off it within the same tick.
-	The floor contact removes their downward velocity, but they stay airborne, keeping
-	their speed and taking no fall damage.
+	When the player hits the very edge of a block and slides off it within the same tick,
+	before the ground check runs. The flat contact zeroes their vertical velocity, but
+	they start and end the tick airborne, keeping horizontal speed and taking no fall
+	damage.
+
+	Pixelsurf
+	When the player stays suspended on the seam between two flush wall brushes. The engine
+	keeps clipping them against the invisible top plane of the lower brush each tick,
+	letting them hang on the wall and slide along it with no floor beneath. Requires being
+	within 0.03125 units above the seam while pressed against the wall.
+
+	Texturebug
+	When the player falls past the open underside of an overhanging brush while hugging
+	its wall. The engine briefly clips them against the brush's top plane instead of the
+	side they actually crossed, zeroing vertical velocity mid-air for that tick.
 
 	Distbug
 	Landing behavior varies depending on whether the player lands close to the edge of a 
@@ -115,6 +127,13 @@ forward void Movement_OnPlayerJump(int client, bool jumpbug);
 
 /**
  * Called when a player edgebugs. Not called for bots.
+ * Fires at most once per tick.
+ * A pixelsurf or texturebug matches the same signature,
+ * so a tick detected as either raises its own forward instead and this one stays silent.
+ * Only flat contact counts, meaning a plane normal z of at least 0.999,
+ * so a plain slope landing does not qualify.
+ * With bsppeek, displacement contacts use the collision mesh's true tri normal,
+ * since hull traces report coarse normals at disp seams.
  * Setting velocity when this is called may not be effective.
  *
  * @param client		Client index.
@@ -122,6 +141,32 @@ forward void Movement_OnPlayerJump(int client, bool jumpbug);
  * @param velocity		Player velocity before edgebug.
  */
 forward void Movement_OnPlayerEdgebug(int client, float origin[3], float velocity[3]);
+
+/**
+ * Called when a player pixelsurfs. Not called for bots.
+ * Fires at most once per tick, and once per tick the player stays suspended on the surf.
+ * Takes priority over Movement_OnPlayerEdgebug, which is suppressed for that tick.
+ * With the bsppeek extension the seam is verified against the map's brush tables.
+ * Falls back to ray probing when the extension is absent or the tables cannot resolve the seam.
+ * Setting velocity when this is called may not be effective.
+ *
+ * @param client		Client index.
+ * @param origin		Player origin before pixelsurf.
+ * @param velocity		Player velocity before pixelsurf.
+ */
+forward void Movement_OnPlayerPixelsurf(int client, float origin[3], float velocity[3]);
+
+/**
+ * Called when a player texturebugs. Not called for bots.
+ * Fires at most once per tick and suppresses Movement_OnPlayerEdgebug for that tick.
+ * Requires the bsppeek extension. Without it such ticks are reported as edgebugs.
+ * Setting velocity when this is called may not be effective.
+ *
+ * @param client		Client index.
+ * @param origin		Player origin before texturebug.
+ * @param velocity		Player velocity before texturebug.
+ */
+forward void Movement_OnPlayerTexturebug(int client, float origin[3], float velocity[3]);
 
 /**
  * Called before PlayerMove movement function is called.
