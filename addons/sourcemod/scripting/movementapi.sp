@@ -13,10 +13,10 @@
 public Plugin myinfo = 
 {
 	name = "MovementAPI", 
-	author = "DanZay", 
+	author = "DanZay, FKZ Fork", 
 	description = "Provides API focused on player movement", 
 	version = "2.5.0",
-	url = "https://github.com/danzayau/MovementAPI"
+	url = "https://github.com/FemboyKZ/MovementAPI"
 };
 
 GameData gH_GameData;
