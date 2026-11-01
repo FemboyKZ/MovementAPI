@@ -36,8 +36,8 @@ jobs:
 
       - name: Compile plugin
         run: |
-          cd addons/sourcemod/scripting
-          spcomp64 -O2 -i "include" movementapi.sp -o "../plugins/movementapi.smx"
+          make SPCOMP="spcomp64 -O2"
+          mv addons/sourcemod/scripting/movementapi.smx addons/sourcemod/plugins/
 
       - name: Prepare artifact
         run: |
