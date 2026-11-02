@@ -160,8 +160,37 @@ native int  BSP_BrushClipBox(int brushIdx, const float start[3], const float end
 // per side, plane normal/dist, PLANE_* type, axis class, bevel/thin. Returns length.
 native int  BSP_BrushSideOrder(int brushIdx, char[] buf, int maxlen);
 
+// Bits returned by BSP_SeamCatch.
+#define BSPP_CATCH_STANDING       1
+#define BSPP_CATCH_DUCKED         2
+#define BSPP_CATCH_WALL_NON_AXIAL 4    // the wall stopping the hull has plane type >= PLANE_Z
+
+// Whether a seam at seamZ catches a player against the wall, by movement's own traces over a grid of arrivals.
+// wallPos: on the face. wallNorm: horizontal unit normal. speed: total speed range of the catches.
+// start: origin and velocity of the first catch. Returns 0, BSPP_CATCH_* bits, or -1 unavailable.
+native int BSP_SeamCatch(const float wallPos[3], const float wallNorm[3], float seamZ, float frametime, float gravity,
+                         float airaccelerate, float maxspeed, float speed[2], float start[6]);
+
+// Sorted heights in zMin..zMax where the wall column changes, for BSP_SeamCatch. Returns the count.
+native int BSP_SeamCandidates(const float wallPos[3], const float wallNorm[3], float zMin, float zMax, float[] out, int maxOut);
+
+// Order bits returned by BSP_SeamOrder (1 << value).
+#define BSPP_SEAM_LOWER_FIRST   0
+#define BSPP_SEAM_UPPER_FIRST   1
+#define BSPP_SEAM_LOWER_MISSING 2
+#define BSPP_SEAM_UPPER_MISSING 3
+#define BSPP_SEAM_BOTH_MISSING  4
+
+// Every order player movement can test lowerBrush and upperBrush in (the first one wins a fraction-0 tie),
+// for a standing-hull origin on origin + t * along, t in [alongMin, alongMax], at any speed up to speedMax.
+// lowerFirst / upperFirst: speed range where that order occurs, -1.0 if never.
+// Returns a mask of 1 << BSPP_SEAM_*, -1 when the collision tree is unreadable.
+native int BSP_SeamOrder(int lowerBrush, int upperBrush, const float origin[3], const float along[3],
+                         float alongMin, float alongMax, float speedMax, float maxspeed, float frametime,
+                         float lowerFirst[2], float upperFirst[2]);
+
 // True if the brush-accurate contents at pos include CONTENTS_LADDER.
-stock bool  BSP_IsLadder(const float pos[3])
+stock bool BSP_IsLadder(const float pos[3])
 {
     return (BSP_PointContentsBrushes(pos) & BSPP_CONTENTS_LADDER) != 0;
 }
@@ -719,7 +748,11 @@ public Extension __ext_bsppeek = {
     name     = "BSP-Peek",
     file     = "bsppeek.ext",
     autoload = 1,
+#if defined REQUIRE_EXTENSIONS
+    required = 1,
+#else
     required = 0,
+#endif
 };
 
 public void __ext_bsppeek_SetNTVOptional()
@@ -765,6 +798,9 @@ public void __ext_bsppeek_SetNTVOptional()
     MarkNativeAsOptional("BSP_BrushSideWinding");
     MarkNativeAsOptional("BSP_BrushClipBox");
     MarkNativeAsOptional("BSP_BrushSideOrder");
+    MarkNativeAsOptional("BSP_SeamOrder");
+    MarkNativeAsOptional("BSP_SeamCatch");
+    MarkNativeAsOptional("BSP_SeamCandidates");
     MarkNativeAsOptional("BSP_LeafBrushes");
     MarkNativeAsOptional("BSP_LeafContents");
     MarkNativeAsOptional("BSP_LeafCluster");
