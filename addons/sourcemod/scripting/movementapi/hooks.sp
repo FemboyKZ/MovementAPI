@@ -10,6 +10,10 @@
 #define PX_FLOOR_PROBE_DROP   2.0
 #define PX_FLOOR_PROBE_TOL    4.0
 
+#define DIST_EPSILON          0.03125
+#define HULL_STAND            72.0
+#define HULL_DUCK             54.0
+
 static DynamicDetour H_OnPlayerMove;
 static DynamicDetour H_OnDuck;
 static DynamicDetour H_OnLadderMove;
@@ -1047,7 +1051,7 @@ static int PxSeamVerdict(const float origin[3], float seamZ, float contactNormal
 	// The engine stops the player DIST_EPSILON short of the clipped plane.
 	// Also rules out texturebugs, which report the same plane from far below its top.
 	float heightAboveSeam = origin[2] - seamZ;
-	if (heightAboveSeam < -0.001 || heightAboveSeam > BSP_DIST_EPSILON + 0.001)
+	if (heightAboveSeam < -0.001 || heightAboveSeam > DIST_EPSILON + 0.001)
 	{
 		return 0;
 	}
@@ -1172,12 +1176,10 @@ static bool BoxPairOrderOK(const float samplePos[3], float seamZ, int lowerBox, 
 	return !(lowerPos >= 0 && upperPos >= 0 && lowerPos > upperPos);
 }
 
-// Falling past an overhanging box brush while hugging its wall makes the engine report the brush's topside,
+// Falling past a box brush's bottom edge while hugging its wall makes the engine report the brush's topside,
 // because cmodel.cpp picks the checked z side from travel direction rather than the side actually crossed.
-// The overhang finder needs a probe INSIDE the wall's XY column near the crossed edge,
-// which is at HULL TOP height beside a hugging player, so try each cardinal column there.
-// The Ineq 10 window is computed here on the probe's axis, since the native measures vPerp
-// on whichever exposed face it picked, which can be the wrong axis on a corner box.
+// The box is looked up in the box table, not by an open underside: the bottom edge of a box with a flush one under it bugs too.
+// Its column holds a probe 1u into the wall beside the hull, on one of the cardinal axes; the Ineq 10 window is on that axis.
 static bool CheckTexturebug(int client, const float origin[3], float seamZ)
 {
 	float velZ = gF_Velocity[client][2];
@@ -1191,39 +1193,42 @@ static bool CheckTexturebug(int client, const float origin[3], float seamZ)
 		return false;
 	}
 	// gB_Ducking predates this tick's Duck, m_vecMaxs lags until PostThink.
-	float hullHeight = GetEntProp(client, Prop_Send, "m_bDucked") ? BSP_CSGO_HULL_DUCK : BSP_CSGO_HULL_STAND;
+	float hullHeight = GetEntProp(client, Prop_Send, "m_bDucked") ? HULL_DUCK : HULL_STAND;
 
-	float probe[3];
-	for (int d = 0; d < 4; d++)
+	int n = BSP_NumBoxBrushes();
+	for (int i = 0; i < n; i++)
 	{
-		probe = origin;
-		probe[2] += hullHeight;
-		int axis = d / 2;
-		probe[axis] += (d & 1) ? -(PX_WALL_HALF_WIDTH + 1.0) : (PX_WALL_HALF_WIDTH + 1.0);
-
-		int boxIdx, face;
-		float wallCoord, bottomZ, height;
-		if (!BSP_FindBoxBrushOverhang(probe, boxIdx, face, wallCoord, bottomZ, height))
-		{
-			continue;
-		}
+		float mn[3], mx[3];
 		// The misreported plane must be this box's own top, else the contact came from elsewhere.
-		if (FloatAbs(bottomZ + height - seamZ) > 0.1)
+		if (!BSP_BoxBrushBounds(i, mn, mx) || FloatAbs(mx[2] - seamZ) > 0.1)
 		{
 			continue;
 		}
-		float vPerp = FloatAbs(gF_Velocity[client][axis]);
-		float maxVPerp = -velZ * BSP_DIST_EPSILON / (height + hullHeight);
-		if (vPerp >= maxVPerp)
+		for (int d = 0; d < 4; d++)
 		{
-			continue;
+			int axis = d / 2, other = 1 - axis;
+			float sign = (d & 1) ? -1.0 : 1.0;
+			float probe = origin[axis] + sign * (PX_WALL_HALF_WIDTH + 1.0);
+			// Beside the hull: a box over it is above the head.
+			float face = sign > 0.0 ? mn[axis] : mx[axis];
+			if (probe < mn[axis] - 0.1 || probe > mx[axis] + 0.1 || origin[other] < mn[other] - 0.1 || origin[other] > mx[other] + 0.1
+				|| sign * (face - origin[axis]) < PX_WALL_HALF_WIDTH - 0.1)
+			{
+				continue;
+			}
+			float vPerp = FloatAbs(gF_Velocity[client][axis]);
+			float maxVPerp = -velZ * DIST_EPSILON / (mx[2] - mn[2] + hullHeight);
+			if (vPerp >= maxVPerp || !(BSP_BoxBrushContents(i) & BSPP_MASK_PLAYERCOLLIDE))
+			{
+				continue;
+			}
+			if (gI_LastTexturebugCmdnum[client] != gI_Cmdnum[client])
+			{
+				gI_LastTexturebugCmdnum[client] = gI_Cmdnum[client];
+				Call_OnPlayerTexturebug(client, gF_Origin[client], gF_Velocity[client]);
+			}
+			return true;
 		}
-		if (gI_LastTexturebugCmdnum[client] != gI_Cmdnum[client])
-		{
-			gI_LastTexturebugCmdnum[client] = gI_Cmdnum[client];
-			Call_OnPlayerTexturebug(client, gF_Origin[client], gF_Velocity[client]);
-		}
-		return true;
 	}
 	return false;
 }

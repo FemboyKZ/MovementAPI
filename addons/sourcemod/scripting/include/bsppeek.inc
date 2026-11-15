@@ -164,6 +164,7 @@ native int  BSP_BrushSideOrder(int brushIdx, char[] buf, int maxlen);
 #define BSPP_CATCH_STANDING       1
 #define BSPP_CATCH_DUCKED         2
 #define BSPP_CATCH_WALL_NON_AXIAL 4    // the wall stopping the hull has plane type >= PLANE_Z
+#define BSPP_CATCH_UNDER_CEILING  8    // BSP_HeadSeamCatch: a flat overhang or displacement edge over the hull
 
 // Whether a seam at seamZ catches a player against the wall, by movement's own traces over a grid of arrivals.
 // wallPos: on the face. wallNorm: horizontal unit normal. speed: total speed range of the catches.
@@ -171,8 +172,41 @@ native int  BSP_BrushSideOrder(int brushIdx, char[] buf, int maxlen);
 native int BSP_SeamCatch(const float wallPos[3], const float wallNorm[3], float seamZ, float frametime, float gravity,
                          float airaccelerate, float maxspeed, float speed[2], float start[6]);
 
+// BSP_SeamCatch for a rising player's head.
+native int BSP_HeadSeamCatch(const float wallPos[3], const float wallNorm[3], float seamZ, float frametime, float gravity,
+                             float airaccelerate, float maxspeed, float speed[2], float start[6]);
+
 // Sorted heights in zMin..zMax where the wall column changes, for BSP_SeamCatch. Returns the count.
 native int BSP_SeamCandidates(const float wallPos[3], const float wallNorm[3], float zMin, float zMax, float[] out, int maxOut);
+
+// Whether a box brush's bottom edge at edgeZ gives a falling player a texturebug, by movement's own traces (brush order counts).
+// Returns BSPP_CATCH_STANDING / BSPP_CATCH_DUCKED bits, or -1 unavailable. info: the brush's height, the smallest gap at the wall.
+native int BSP_TexturebugCatch(const float wallPos[3], const float wallNorm[3], float edgeZ, float frametime, float gravity,
+                               float maxspeed, float info[2]);
+
+// BSP_WallEdgePoints bits, the 7th float of a point.
+#define BSPP_EDGE_TOP       1    // a face's top edge, else its bottom edge
+#define BSPP_EDGE_CONTINUES 2    // a face goes on past the edge, flush with this one, else the wall ends there
+#define BSPP_EDGE_NONWORLD  4    // with CONTINUES: the face past the edge is a displacement's, a prop's or an entity's
+#define BSPP_EDGE_FLOATS    11
+
+// Points about every `spacing` units along the horizontal edges of wall faces where a seam can be, for map-wide seam tests, from world
+// brushes, the brushes of func_brush, func_wall and func_wall_toggle entities that are solid, displacements and props.
+// "Flush" is measured with a small box, which meets a vphysics model where movement does:
+// - brushes: bottom edges unless a floor meets them; top edges under a displacement, prop or entity,
+//   or inside a world face that goes on lower (a world brush starting at the edge has its own bottom edge there);
+// - vphysics brush entities collide 0.5u inside some faces: their edges are where movement meets them; a top edge moved down carries
+//   the seam (bits TOP | CONTINUES when a face flush with it goes on above), a bottom edge moved up gets no CONTINUES;
+// - displacements: top edges with a face flush above, unless a world brush's bottom edge is on the same plane there;
+// - solid static props, prop_dynamic and prop_dynamic_override: top edges of their collision mesh under a displacement, prop or entity
+//   (under a world brush a prop never hovers).
+// Built once per map: entities that move, toggle or go away later aren't followed.
+// Per point BSPP_EDGE_FLOATS floats: x, y, z on the face, flat normal x, y, edge index (points of one edge are consecutive), BSPP_EDGE_* bits,
+// then the ends (x, y, x, y) of the stretch of edge the point stands for: touching stretches make one line.
+// Built on the first call per map and spacing (main thread). Copies up to maxOut points from `first`: `out` must hold
+// maxOut * BSPP_EDGE_FLOATS floats (maxOut 0 returns only the total). Returns the total. Throws for spacing under 1 or a
+// negative first or maxOut.
+native int BSP_WallEdgePoints(float spacing, int first, float[] out, int maxOut);
 
 // Order bits returned by BSP_SeamOrder (1 << value).
 #define BSPP_SEAM_LOWER_FIRST   0
@@ -257,51 +291,6 @@ native bool BSP_FindBrushPairAtSeam(const float samplePos[3], float seamZ,
 // outLower w/ maxs.z == seamZ, outUpper w/ mins.z == seamZ. true if both found.
 native bool BSP_FindBoxBrushPairAtSeam(const float samplePos[3], float seamZ,
                                        int &outLowerBox, int &outUpperBox);
-
-// Texturebug overhang geometry.
-// Finds a player-collidable (BSPP_MASK_PLAYERCOLLIDE) box brush at samplePos' XY column whose underside (-Z) is open
-// AND which has an exposed vertical wall the player can hug. Box-table index space.
-// Open/exposed are tested against brushes only, not displacements or props.
-//   samplePos : probe location (player pos / aim point).
-//   boxIdx    : cboxbrush_t index of the overhang brush.
-//   face      : hugged wall, axis+sign of its OUTWARD normal
-//               (0 = -X, 1 = +X, 2 = -Y, 3 = +Y). The player presses in the -normal direction.
-//               If several lateral faces are exposed, the one facing samplePos is returned.
-//   wallCoord : world coord of that wall plane.
-//   bottomZ   : underside z (brush mins.z), the plane the player crosses.
-//   height    : brush vertical extent (maxs.z - mins.z), Ineq(10) numerator.
-// Returns true if an overhang was found.
-// Among qualifying boxes in the column, returns the one whose bottom edge is nearest BELOW samplePos.z
-// (the next edge a falling player crosses), else nearest above.
-native bool BSP_FindBoxBrushOverhang(const float samplePos[3], int &boxIdx,
-                                     int &face, float &wallCoord, float &bottomZ,
-                                     float &height);
-
-// CSGO player hull heights (g_CSViewVectors).
-#define BSP_CSGO_HULL_STAND 72.0
-#define BSP_CSGO_HULL_DUCK  54.0
-// Engine trace epsilon (cmodel.cpp DIST_EPSILON).
-#define BSP_DIST_EPSILON    0.03125
-
-// BSP_FindBoxBrushOverhang + the face-selection velocity window in one call (the "texturebug" condition).
-// Tests whether vel satisfies the topside-misreport window (cmodel.cpp IntersectRayWithBoxBrush Ineq 7/10):
-//   |v_perp| < (|v_z| * DIST_EPSILON) / (H_brush + hullHeight)
-// where v_perp is the velocity component along the hugged wall's normal axis.
-//   playerPos  : player origin (trace start).
-//   vel        : player velocity at the trace tick.
-//   hullHeight : player hull height. 72.0 standing, 54.0 ducked (CSGO).
-//   boxIdx     : cboxbrush_t index of the overhang brush.
-//   face       : hugged wall (0=-X, 1=+X, 2=-Y, 3=+Y).
-//   wallCoord  : world coord of that wall plane.
-//   bottomZ    : brush underside z (brush mins.z), the crossing plane.
-//   height     : brush vertical extent (maxs.z - mins.z).
-//   maxVPerp   : window width, max |v_perp| that triggers the bug.
-//   vPerp      : actual |v_perp| from vel (compare to maxVPerp for margin).
-// Returns true iff overhang found AND v_z < 0 AND |v_perp| < maxVPerp.
-native bool BSP_BoxBrushOverhangWindow(const float playerPos[3], const float vel[3],
-                                       float hullHeight, int &boxIdx, int &face,
-                                       float &wallCoord, float &bottomZ, float &height,
-                                       float &maxVPerp, float &vPerp);
 
 // BSP_FindBrushPairAtSeam + the leaf-visit-order gate in one call.
 // Resolves the lower/upper brushes at the seam, then samples the leaf just below seamZ and reports each brush's position in that leaf's brush list.
@@ -606,17 +595,20 @@ native int   BSP_StaticPropAtRay(const float start[3], const float end[3]);
 
 // Diagnostic:
 // Runs the collision-mesh pipeline (GetCollisionModel -> GetVCollide -> CreateDebugMesh) for runtime prop `idx`,
-// writes model/vcollide/solid/vert counts into buf.
-// Confirms the mesh is reachable (esp. on prop-combine maps). Returns length.
+// writes the model and vcollide pointers, SOLID_* type, solid count, first solid's vertex and triangle counts, collision scale
+// and model name into buf.
+// Confirms the mesh is reachable (esp. on prop-combine maps). Returns the full text's length, which can exceed maxlen.
 native int   BSP_StaticPropProbe(int idx, char[] buf, int maxlen);
 
-// Runtime prop collision mesh, world-space triangles (engine CreateDebugMesh transformed to world).
-// Props with no .phy collision fall back to 12 OBB tris.
+// Runtime prop collision mesh, world-space triangles, as the engine traces the prop: the first solid of its collision model at its
+// collision scale (CreateDebugMesh, transformed to world); a SOLID_BBOX prop's unrotated box; none for a vphysics prop without one;
+// else 12 OBB tris.
 // Built + cached per prop on first access, works on prop-combine maps.
 native int   BSP_StaticPropTriCount(int idx);
 native bool  BSP_StaticPropTri(int idx, int triIdx, float v0[3], float v1[3], float v2[3]);
-// Nearest collision triangle to pos across props within maxDist.
-// Returns distance (-1.0 if none), sets propIdx + the tri's plane normal + 3 world-space verts.
+// Nearest collision triangle of a runtime static prop to pos, within maxDist (must be positive).
+// Returns distance (-1.0 if none), sets propIdx (runtime index), the normal of v0, v1, v2 by their winding (may face into the
+// prop), and the 3 world-space verts.
 native float BSP_StaticPropNearestTri(const float pos[3], float maxDist, int &propIdx,
                                       float normal[3], float v0[3], float v1[3], float v2[3]);
 
@@ -624,7 +616,8 @@ native float BSP_StaticPropNearestTri(const float pos[3], float maxDist, int &pr
 // isolated to this prop by its model's vcollide.
 // Fills fraction (1.0 = no hit), endpos, normal, startSolid.
 // Returns: -1 = unavailable (interfaces unresolved or no collision model), 0 = no hit, 1 = hit.
-// NOTE: by-name resolution, does NOT work for prop-combine (autocombine) models.
+// NOTE: `idx` is the sprp-lump index (as BSP_StaticPropOrigin), not the runtime one. By-name resolution, does NOT work for
+// prop-combine (autocombine) models, and ignores the prop's scale.
 // Prefer BSP_StaticPropHullSweep, which uses the runtime props.
 native int   BSP_StaticPropTraceHull(int idx, const float start[3], const float end[3],
                                      const float mins[3], const float maxs[3],
@@ -726,7 +719,7 @@ native float BSP_WaterSurfaceZAt(const float pos[3]);
 // Chains EntityModelIndex -> CModelBounds + origin (engine padding removed, "angles" not applied).
 // false if entIdx isn't a brush-model entity.
 native bool  BSP_EntityBrushBounds(int entIdx, float mins[3], float maxs[3]);
-// Applied push velocity of a trigger_push: AngleVectors(pushdir) * speed (speed defaults to 40).
+// Applied push velocity of a trigger_push: AngleVectors(pushdir) * speed (a missing or 0 speed is 100, as in the engine).
 // Returns false (and zero vel) if entIdx isn't a trigger_push.
 native bool  BSP_TriggerPushVelocity(int entIdx, float vel[3]);
 // Origin of the entity referenced by entIdx's "target" key (e.g. a trigger_teleport's info_teleport_destination).
@@ -800,7 +793,10 @@ public void __ext_bsppeek_SetNTVOptional()
     MarkNativeAsOptional("BSP_BrushSideOrder");
     MarkNativeAsOptional("BSP_SeamOrder");
     MarkNativeAsOptional("BSP_SeamCatch");
+    MarkNativeAsOptional("BSP_WallEdgePoints");
+    MarkNativeAsOptional("BSP_HeadSeamCatch");
     MarkNativeAsOptional("BSP_SeamCandidates");
+    MarkNativeAsOptional("BSP_TexturebugCatch");
     MarkNativeAsOptional("BSP_LeafBrushes");
     MarkNativeAsOptional("BSP_LeafContents");
     MarkNativeAsOptional("BSP_LeafCluster");
@@ -825,8 +821,6 @@ public void __ext_bsppeek_SetNTVOptional()
     MarkNativeAsOptional("BSP_CModelHeadnode");
     MarkNativeAsOptional("BSP_FindBrushPairAtSeam");
     MarkNativeAsOptional("BSP_FindBoxBrushPairAtSeam");
-    MarkNativeAsOptional("BSP_FindBoxBrushOverhang");
-    MarkNativeAsOptional("BSP_BoxBrushOverhangWindow");
     MarkNativeAsOptional("BSP_LeafBrushPairAtSeam");
     MarkNativeAsOptional("BSP_RebuildCache");
     MarkNativeAsOptional("BSP_RebuildCacheAsync");
