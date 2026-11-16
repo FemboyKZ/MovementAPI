@@ -1,4 +1,5 @@
 #define MAX_BUMPS 4
+#define STATE_SIZE 64
 
 methodmap Vector
 {

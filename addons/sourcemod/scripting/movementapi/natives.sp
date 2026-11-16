@@ -26,6 +26,8 @@ void CreateNatives()
 	CreateNative("Movement_SetTakeoffVelocity", Native_SetTakeoffVelocity);
 	CreateNative("Movement_SetLandingOrigin", Native_SetLandingOrigin);
 	CreateNative("Movement_SetLandingVelocity", Native_SetLandingVelocity);
+	CreateNative("Movement_GetState", Native_GetState);
+	CreateNative("Movement_SetState", Native_SetState);
 
 	CreateNative("Movement_GetCollisionCount", Native_GetCollisionCount);
 	CreateNative("Movement_GetCollisionStartOrigin", Native_GetCollisionStartOrigin);
@@ -195,6 +197,117 @@ public int Native_SetLandingVelocity(Handle plugin, int numParams)
 	}
 
 	return 0;
+}
+
+public int Native_GetState(Handle plugin, int numParams)
+{
+	int client = GetNativeCell(1);
+	if (!ValidStateSize(GetNativeCell(3)))
+	{
+		return 0;
+	}
+	any state[STATE_SIZE];
+	SaveState(client, state);
+	SetNativeArray(2, state, sizeof(state));
+	return 0;
+}
+
+public int Native_SetState(Handle plugin, int numParams)
+{
+	int client = GetNativeCell(1);
+	if (!ValidStateSize(GetNativeCell(3)))
+	{
+		return 0;
+	}
+	any state[STATE_SIZE];
+	GetNativeArray(2, state, sizeof(state));
+	LoadState(client, state);
+	return 0;
+}
+
+static bool ValidStateSize(int size)
+{
+	if (size != STATE_SIZE)
+	{
+		ThrowNativeError(SP_ERROR_NATIVE, "State size %d doesn't match MovementAPI's %d.", size, STATE_SIZE);
+		return false;
+	}
+	return true;
+}
+
+// New fields go at the end, so stored states keep their layout.
+static void SaveState(int client, any state[STATE_SIZE])
+{
+	int i = 0;
+	state[i++] = gB_Jumped[client];
+	state[i++] = gB_HitPerf[client];
+	SaveVector(state, i, gF_NobugLandingOrigin[client]);
+	SaveVector(state, i, gF_LandingOrigin[client]);
+	SaveVector(state, i, gF_LandingVelocity[client]);
+	state[i++] = gI_LandingTick[client] - gI_TickCount[client];
+	state[i++] = gI_LandingCmdNum[client] - gI_Cmdnum[client];
+	SaveVector(state, i, gF_TakeoffOrigin[client]);
+	SaveVector(state, i, gF_TakeoffVelocity[client]);
+	state[i++] = gI_TakeoffTick[client] - gI_TickCount[client];
+	state[i++] = gI_TakeoffCmdNum[client] - gI_Cmdnum[client];
+	SaveVector(state, i, gF_TakeoffLadderNormal[client]);
+	state[i++] = gB_Turning[client];
+	state[i++] = gB_TurningLeft[client];
+	SaveVector(state, i, gF_OldOrigin[client]);
+	SaveVector(state, i, gF_OldVelocity[client]);
+	SaveVector(state, i, gF_OldEyeAngles[client]);
+	state[i++] = gB_OldOnGround[client];
+	state[i++] = gB_OldDucking[client];
+	state[i++] = gMT_OldMovetype[client];
+	state[i++] = gB_OldWalkMoved[client];
+	state[i++] = gB_Ducking[client];
+	state[i++] = gB_Duckbugged[client];
+	state[i++] = gB_Jumpbugged[client];
+}
+
+static void LoadState(int client, const any state[STATE_SIZE])
+{
+	int i = 0;
+	gB_Jumped[client] = state[i++];
+	gB_HitPerf[client] = state[i++];
+	LoadVector(state, i, gF_NobugLandingOrigin[client]);
+	LoadVector(state, i, gF_LandingOrigin[client]);
+	LoadVector(state, i, gF_LandingVelocity[client]);
+	gI_LandingTick[client] = gI_TickCount[client] + state[i++];
+	gI_LandingCmdNum[client] = gI_Cmdnum[client] + state[i++];
+	LoadVector(state, i, gF_TakeoffOrigin[client]);
+	LoadVector(state, i, gF_TakeoffVelocity[client]);
+	gI_TakeoffTick[client] = gI_TickCount[client] + state[i++];
+	gI_TakeoffCmdNum[client] = gI_Cmdnum[client] + state[i++];
+	LoadVector(state, i, gF_TakeoffLadderNormal[client]);
+	gB_Turning[client] = state[i++];
+	gB_TurningLeft[client] = state[i++];
+	LoadVector(state, i, gF_OldOrigin[client]);
+	LoadVector(state, i, gF_OldVelocity[client]);
+	LoadVector(state, i, gF_OldEyeAngles[client]);
+	gB_OldOnGround[client] = state[i++];
+	gB_OldDucking[client] = state[i++];
+	gMT_OldMovetype[client] = state[i++];
+	gB_OldWalkMoved[client] = state[i++];
+	gB_Ducking[client] = state[i++];
+	gB_Duckbugged[client] = state[i++];
+	gB_Jumpbugged[client] = state[i++];
+}
+
+static void SaveVector(any state[STATE_SIZE], int &i, const float vector[3])
+{
+	for (int j = 0; j < 3; j++)
+	{
+		state[i++] = vector[j];
+	}
+}
+
+static void LoadVector(const any state[STATE_SIZE], int &i, float vector[3])
+{
+	for (int j = 0; j < 3; j++)
+	{
+		vector[j] = state[i++];
+	}
 }
 
 public int Native_GetCollisionCount(Handle plugin, int numParams)
