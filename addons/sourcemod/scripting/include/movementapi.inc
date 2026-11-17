@@ -605,7 +605,7 @@ native void Movement_GetState(int client, any[] state, int size = MOVEMENT_STATE
  * @param client     Client index.
  * @param state      State to set.
  * @param size       Size of the state, must be MOVEMENT_STATE_SIZE.
- * @error            Wrong state size.
+ * @error            Wrong state size, or a state version this MovementAPI doesn't read.
  */
 native void Movement_SetState(int client, const any[] state, int size = MOVEMENT_STATE_SIZE);
 

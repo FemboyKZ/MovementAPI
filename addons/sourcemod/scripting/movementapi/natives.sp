@@ -221,6 +221,11 @@ public int Native_SetState(Handle plugin, int numParams)
 	}
 	any state[STATE_SIZE];
 	GetNativeArray(2, state, sizeof(state));
+	if (state[0] != STATE_VERSION)
+	{
+		ThrowNativeError(SP_ERROR_NATIVE, "State version %d isn't MovementAPI's %d.", state[0], STATE_VERSION);
+		return 0;
+	}
 	LoadState(client, state);
 	return 0;
 }
@@ -235,10 +240,11 @@ static bool ValidStateSize(int size)
 	return true;
 }
 
-// New fields go at the end, so stored states keep their layout.
+// Cell 0 is the layout's version: a new field bumps STATE_VERSION, and LoadState must still read older states.
 static void SaveState(int client, any state[STATE_SIZE])
 {
 	int i = 0;
+	state[i++] = STATE_VERSION;
 	state[i++] = gB_Jumped[client];
 	state[i++] = gB_HitPerf[client];
 	SaveVector(state, i, gF_NobugLandingOrigin[client]);
@@ -263,11 +269,13 @@ static void SaveState(int client, any state[STATE_SIZE])
 	state[i++] = gB_Ducking[client];
 	state[i++] = gB_Duckbugged[client];
 	state[i++] = gB_Jumpbugged[client];
+	// A ladder takeoff can read it before this tick's LadderMove sets it.
+	SaveVector(state, i, gF_PostLadderMoveVelocity[client]);
 }
 
 static void LoadState(int client, const any state[STATE_SIZE])
 {
-	int i = 0;
+	int i = 1;
 	gB_Jumped[client] = state[i++];
 	gB_HitPerf[client] = state[i++];
 	LoadVector(state, i, gF_NobugLandingOrigin[client]);
@@ -292,6 +300,7 @@ static void LoadState(int client, const any state[STATE_SIZE])
 	gB_Ducking[client] = state[i++];
 	gB_Duckbugged[client] = state[i++];
 	gB_Jumpbugged[client] = state[i++];
+	LoadVector(state, i, gF_PostLadderMoveVelocity[client]);
 }
 
 static void SaveVector(any state[STATE_SIZE], int &i, const float vector[3])
