@@ -605,9 +605,10 @@ native void Movement_GetState(int client, any[] state, int size = MOVEMENT_STATE
  * @param client     Client index.
  * @param state      State to set.
  * @param size       Size of the state, must be MOVEMENT_STATE_SIZE.
- * @error            Wrong state size, or a state version this MovementAPI doesn't read.
+ * @return           Whether the state was set, false if another version took it.
+ * @error            Wrong state size.
  */
-native void Movement_SetState(int client, const any[] state, int size = MOVEMENT_STATE_SIZE);
+native bool Movement_SetState(int client, const any[] state, int size = MOVEMENT_STATE_SIZE);
 
 /**
  * Largest number of collisions MovementAPI stores per tick.
@@ -814,9 +815,9 @@ methodmap MovementAPIPlayer < MovementPlayer {
 		Movement_GetState(this.ID, state, size);
 	}
 
-	public void SetState(const any[] state, int size = MOVEMENT_STATE_SIZE)
+	public bool SetState(const any[] state, int size = MOVEMENT_STATE_SIZE)
 	{
-		Movement_SetState(this.ID, state, size);
+		return Movement_SetState(this.ID, state, size);
 	}
 }
 

@@ -217,17 +217,16 @@ public int Native_SetState(Handle plugin, int numParams)
 	int client = GetNativeCell(1);
 	if (!ValidStateSize(GetNativeCell(3)))
 	{
-		return 0;
+		return view_as<int>(false);
 	}
 	any state[STATE_SIZE];
 	GetNativeArray(2, state, sizeof(state));
 	if (state[0] != STATE_VERSION)
 	{
-		ThrowNativeError(SP_ERROR_NATIVE, "State version %d isn't MovementAPI's %d.", state[0], STATE_VERSION);
-		return 0;
+		return view_as<int>(false);
 	}
 	LoadState(client, state);
-	return 0;
+	return view_as<int>(true);
 }
 
 static bool ValidStateSize(int size)
